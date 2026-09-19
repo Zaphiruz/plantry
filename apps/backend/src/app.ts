@@ -11,7 +11,10 @@ import { createSessionStore } from './auth/session.js';
 import type { OidcClient } from './auth/oidc.js';
 import { registerHouseholdRoutes } from './households/routes.js';
 import { registerInviteAcceptRoute } from './households/invites.js';
+import { registerPushRoutes } from './routes/push.js';
 import { registerScoped } from './scoped/index.js';
+import type { PushService } from './services/push.js';
+import type { Storage } from './services/storage.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -30,13 +33,19 @@ export interface BuildAppOptions {
   sessionTtlSeconds?: number;
   devBypass?: boolean;
   disableRateLimit?: boolean;
+  push?: PushService;
+  storage?: Storage;
 }
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 export async function buildApp(options: BuildAppOptions): Promise<FastifyInstance> {
   const app = Fastify({ logger: options.logger ?? false, trustProxy: true });
-  const deps: Deps = { prisma: options.prisma, frontendOrigin: options.frontendOrigin };
+  const deps: Deps = {
+    prisma: options.prisma, frontendOrigin: options.frontendOrigin,
+    ...(options.push ? { push: options.push } : {}),
+    ...(options.storage ? { storage: options.storage } : {}),
+  };
 
   app.decorate('routeTable', []);
   app.addHook('onRoute', (r) => {
@@ -86,13 +95,14 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   const authDeps: AuthRouteDeps = {
     prisma: options.prisma, sessionStore, oidcClient: options.oidcClient, cookieName,
     cookieSecure: options.cookieSecure, ttlSeconds, frontendOrigin: options.frontendOrigin,
-    photosEnabled: false, pushEnabled: false,
+    photosEnabled: !!options.storage, pushEnabled: !!options.push,
   };
   registerAuthRoutes(app, authDeps);
   if (options.devBypass) registerDevBypass(app, authDeps, adminGroup);
 
   registerHouseholdRoutes(app, deps);
   registerInviteAcceptRoute(app, deps);
+  registerPushRoutes(app, deps);
   await registerScoped(app, deps);
 
   return app;
