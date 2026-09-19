@@ -4,6 +4,8 @@ import { Layout } from './components/Layout';
 import { HouseholdPicker } from './pages/HouseholdPicker';
 import { Inventory } from './pages/Inventory';
 import { InviteAccept } from './pages/InviteAccept';
+import { ItemDetail } from './pages/ItemDetail';
+import { ItemForm } from './pages/ItemForm';
 
 const Placeholder = ({ name }: { name: string }) => <p className="p-4 text-slate-500">{name} — coming in a later task</p>;
 
@@ -16,9 +18,9 @@ export function App() {
       <Route path="/invite/:token" element={<InviteAccept />} />
       <Route path="/h/:hid" element={<Layout />}>
         <Route index element={<Inventory />} />
-        <Route path="items/new" element={<Placeholder name="New item" />} />
-        <Route path="items/:id" element={<Placeholder name="Item" />} />
-        <Route path="items/:id/edit" element={<Placeholder name="Edit item" />} />
+        <Route path="items/new" element={<ItemForm />} />
+        <Route path="items/:id" element={<ItemDetail />} />
+        <Route path="items/:id/edit" element={<ItemForm />} />
         <Route path="shopping" element={<Placeholder name="Shopping" />} />
         <Route path="settings" element={<Placeholder name="Settings" />} />
       </Route>
