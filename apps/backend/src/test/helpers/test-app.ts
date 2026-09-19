@@ -4,6 +4,9 @@ import { buildApp } from '../../app.js';
 import { getTestPrisma } from './db.js';
 import { createSessionStore } from '../../auth/session.js';
 import { FakeOidcClient } from './fakes.js';
+import { applyEvent } from '../../services/inventory.js';
+
+export interface ItemOpts { name?: string; count?: number; min?: number; storeId?: string; barcode?: string; archived?: boolean; defaultRestockQty?: number }
 
 export const TEST_ORIGIN = 'http://localhost:5173';
 export const TEST_COOKIE = 'plantry_sid';
@@ -18,6 +21,7 @@ export interface TestCtx {
   user(opts?: { name?: string; admin?: boolean }): Promise<TestUser>;
   household(owner: TestUser, name?: string): Promise<string>;
   addMember(hid: string, user: TestUser, role?: 'owner' | 'member'): Promise<void>;
+  item(hid: string, opts?: ItemOpts): Promise<import('@prisma/client').Item>;
   close(): Promise<void>;
 }
 
@@ -67,6 +71,24 @@ export async function createTestApp(): Promise<TestCtx> {
     },
     async addMember(hid, user, role = 'member') {
       await prisma.householdMember.create({ data: { householdId: hid, userSub: user.sub, role } });
+    },
+    async item(hid, opts = {}) {
+      const each = await prisma.unit.findFirstOrThrow({ where: { householdId: null, name: 'each' } });
+      const item = await prisma.item.create({
+        data: {
+          householdId: hid, name: opts.name ?? `Item ${++n}`, unitId: each.id,
+          preferredStoreId: opts.storeId ?? null, barcode: opts.barcode ?? null,
+          defaultRestockQty: opts.defaultRestockQty ?? 1,
+          archivedAt: opts.archived ? new Date() : null,
+          inventory: { create: { minStock: opts.min ?? 0 } },
+        },
+      });
+      if (opts.count) {
+        await prisma.$transaction((tx) => applyEvent(tx, {
+          itemId: item.id, householdId: hid, eventType: 'adjust', quantity: opts.count!, userSub: null,
+        }));
+      }
+      return item;
     },
     async close() { await app.close(); },
   };
