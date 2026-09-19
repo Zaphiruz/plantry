@@ -20,6 +20,8 @@ This spec is the single source of truth where it differs from the handoff spec. 
 | Next-trip marking | Manual "add to next trip" creates a list entry *linked* to the item |
 | Auto-deduct | Amount-per-period (`qty` every `period_days`), discrete steps — supports "2/day" and "1 per 90 days" |
 | Item photos | In v1. Dinner Club's MinIO instance, own bucket + scoped service account, client-side downscale, presigned PUT/GET, no worker |
+| Feedback | In-app feedback files a GitHub issue (same system as Velvet Scoop / Two Cents), with per-user status tracking |
+| API style | JSON is camelCase; success `{ data }`, errors `{ error: { code, message, details? } }` (matches sibling apps). Route/body names in §4 written in snake_case are illustrative — the wire format is camelCase (`sourceId`, `keepMinStockFrom`, `newCount`). |
 | Timezone | Backend container `TZ=America/New_York`; daily job at 06:00 local |
 | Hostname / groups | `plantry.wispy-nook.casa`; Authentik groups `plantry-users` (access gate), `plantry-admins` (hard delete) |
 
@@ -55,12 +57,12 @@ Each is a Fastify plugin. Routes are thin; logic lives in services that take a P
 
 ### 2.3 Auth
 
-- Authentik OIDC, **confidential client**, authorization code + PKCE via `openid-client`. Scopes: `openid profile email groups`. Redirect URI `https://plantry.wispy-nook.casa/api/auth/callback` (+ `http://localhost:5173/api/auth/callback` for dev).
+- Authentik OIDC, **confidential client**, authorization code + PKCE via `openid-client`. Scopes: `openid profile email` plus Authentik's groups scope (`goauthentik.io/providers/oauth2/scope-groups`, as in Velvet Scoop). Redirect URI `https://plantry.wispy-nook.casa/api/auth/callback` (+ `http://localhost:5173/api/auth/callback` for dev).
 - PKCE/state kept in a short-lived signed cookie `plantry_oidc`.
 - On callback: upsert `users` (`sub`, `name`, `email`, `last_login_at`); create `sessions` row; set cookie `plantry_sid` — HttpOnly, Secure, SameSite=Lax, 7-day sliding expiry. The cookie holds a random 256-bit id; the DB stores its SHA-256.
-- Session `data` (jsonb) holds id/refresh tokens and the `groups` claim. `isAdmin = groups.includes('plantry-admins')` — read from the session, no DB round-trip, refreshed each login.
+- Session `data` (jsonb) holds the `groups` claim and the id token (used as `id_token_hint` at logout); no tokens ever reach the browser. `isAdmin = groups.includes('plantry-admins')` — read from the session, no DB round-trip, refreshed each login.
 - App access gate: bind `plantry-users` to the application in Authentik. Any authenticated user is valid to the app.
-- CSRF: SameSite=Lax + mutations require `Content-Type: application/json` + `Origin` must equal `FRONTEND_ORIGIN`.
+- CSRF: SameSite=Lax + every non-GET/HEAD/OPTIONS request must carry `Origin` equal to `FRONTEND_ORIGIN` (403 otherwise). Bodies are only ever parsed as JSON and validated with zod.
 - Logout: delete session row, clear cookie, redirect to Authentik end-session endpoint.
 
 ### 2.4 Deployment (S2, per "Adding a new app" checklist)
@@ -68,9 +70,9 @@ Each is a Fastify plugin. Routes are thin; logic lives in services that take a P
 - `/opt/plantry/docker-compose.prod.yml`: `backend` (no host port; networks `shared-db`; mounts Cloudflare Origin CA, `NODE_EXTRA_CA_CERTS`; `TZ=America/New_York`) and `frontend` (Caddy, `3007:80`, proxies `/api/*` → `backend:3000`). `restart: unless-stopped`.
 - PostgreSQL: user `plantry`, database `plantry` created with `TEMPLATE template0` (collation-mismatch gotcha).
 - Vault: policy `plantry`, periodic token via `add-app-token.sh`, `.env` holds only `VAULT_ADDR` + `VAULT_TOKEN`; `entrypoint.mjs` fetches `secret/data/plantry`:
-  `DATABASE_URL`, `SESSION_SECRET`, `FRONTEND_ORIGIN`, `AUTHENTIK_ISSUER`, `AUTHENTIK_CLIENT_ID`, `AUTHENTIK_CLIENT_SECRET`, `AUTHENTIK_REDIRECT_URI`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `S3_ENDPOINT`, `S3_PUBLIC_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`.
+  `DATABASE_URL`, `SESSION_SECRET`, `FRONTEND_ORIGIN`, `AUTHENTIK_ISSUER_URL`, `AUTHENTIK_CLIENT_ID`, `AUTHENTIK_CLIENT_SECRET`, `AUTHENTIK_REDIRECT_URI`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `GITHUB_FEEDBACK_TOKEN`, `GITHUB_FEEDBACK_REPO`, `S3_ENDPOINT`, `S3_PUBLIC_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`.
 - nginx server block on LC2 (`proxy_pass http://192.168.40.20:3007`, `X-Forwarded-Proto https`), Cloudflare Tunnel public hostname `plantry.wispy-nook.casa`. Fastify `trustProxy: true`.
-- GitHub repo **private**; self-hosted runner `/opt/actions-runner-plantry` as `runner`; deploy key + SSH host alias `github.com-plantry`. Workflow on push to `main`: pull → `docker compose build` → `up -d` → `prisma migrate deploy` in the backend container with `DATABASE_URL` injected from Vault (python3 one-liner pattern from Dinner Club).
+- GitHub repo **private**; self-hosted runner `/opt/actions-runner-plantry` as `runner`; deploy key + SSH host alias `github.com-plantry`. Deploy workflow runs only after CI passes on `main`: pull → `docker compose build` → `prisma migrate deploy` (one-off `compose run`, `DATABASE_URL` injected from Vault via the python3 one-liner pattern) → `up -d` → health check.
 - **PATCH check**: Mealie's external API returns Cloudflare 1010 on PATCH/PUT from non-browser clients. Verify a browser-originated `PATCH /items/:id` passes the tunnel during first deploy; if blocked, switch item/store/unit/member updates to `PUT`.
 - Local dev: `docker-compose.yml` with postgres + minio + minio-setup (bucket create); `AUTH_DEV_BYPASS=1` stub user for non-production only (refuses to start if `NODE_ENV=production`).
 
@@ -109,7 +111,9 @@ Index: unique `(household_id, item_id) WHERE item_id IS NOT NULL AND NOT checked
 
 **push_subscriptions** — `endpoint` (PK), `user_sub`, `p256dh`, `auth`, `created_at`
 
-**job_runs** — `job` (PK), `last_run_at`
+**job_runs** — `job` (PK), `last_run_at`, `started_at` (non-null while a run holds the claim)
+
+**feedback_submissions** — `id`, `user_sub`, `issue_number`, `issue_url`, `title`, `state` (null), `state_reason` (null), `closed_at` (null), `state_fetched_at` (null), `created_at`
 
 ---
 
@@ -128,6 +132,10 @@ GET    /me                                   # user, isAdmin, households[{id,nam
 GET    /push/vapid-key
 POST   /push/subscriptions                   { endpoint, keys }     # upsert
 DELETE /push/subscriptions                   { endpoint }
+
+# feedback (unscoped, user-level; routes absent when GitHub isn't configured)
+POST   /feedback                             { body, pageUrl? }     # 201 → { issueNumber, issueUrl }; 429 rate_limited after 5 / 24 h
+GET    /feedback/mine                                               # my submissions with status open | done | closed
 
 # households (unscoped)
 POST   /households                           { name }               # caller becomes owner
@@ -241,11 +249,14 @@ Photos are optional end-to-end: if `S3_*` secrets are absent the upload endpoint
 ### 5.10 Barcode scanning
 `BarcodeDetector` where available, else `@zxing/browser`. Scan → `GET /items?barcode=X` → match: action sheet (Restock default / Consume 1 / Open); no match: new-item form with barcode prefilled.
 
+### 5.11 Feedback → GitHub issues
+Same system as Velvet Scoop / Two Cents. `POST /feedback` creates an issue in the Plantry repo (title = first 57 chars + "…", body = text + submitter name/sub + page path, labels `feedback` + `user-submitted`) using a fine-grained PAT with Issues read/write only (`GITHUB_FEEDBACK_TOKEN`, `GITHUB_FEEDBACK_REPO=owner/repo` in Vault), and records a `feedback_submissions` row. Limit 5 per user per 24 h (429 `rate_limited`). `GET /feedback/mine` derives status from cached GitHub state: not closed → `open`; closed as completed → `done`; otherwise `closed`. Closed state is cached forever; non-closed issues are re-fetched when the cache is > 1 h old (an improvement over Velvet Scoop, which never refreshes). GitHub failures on refresh are logged and the cached status is shown. If the env vars are absent the routes don't exist, `/me.feedbackEnabled` is false and the UI hides the form. UI lives in Settings: textarea + "my submissions" list with status chips.
+
 ---
 
 ## 6. Daily job
 
-`node-cron` `0 6 * * *` (container TZ). On boot, run immediately if `job_runs.last_run_at` is > 24 h old. Wrapped in `pg_try_advisory_lock` so overlapping starts can't double-run. Order: (1) auto-deduct, (2) low-stock push, (3) sweeps — expired sessions, expired/used invites > 30 d, checked-off free-text rows > 24 h, orphan photo objects. Each stage is try/caught and logged independently; then update `job_runs`.
+`node-cron` `0 6 * * *` (container TZ). On boot, run immediately if `job_runs.last_run_at` is > 24 h old. Overlapping starts are prevented by an atomic claim on the `job_runs` row (`started_at`; a claim older than 1 h is considered stale and can be taken over) — not a session advisory lock, which is unsafe with Prisma's connection pool. Order: (1) auto-deduct, (2) low-stock push, (3) sweeps — expired sessions, expired/used invites > 30 d, checked-off free-text rows > 24 h, orphan photo objects. Each stage is try/caught and logged independently; then update `job_runs`.
 
 ---
 
@@ -257,7 +268,7 @@ Mobile-first PWA. Routes:
 |---|---|
 | `/` | Household picker (or create / paste invite if none). Never auto-selects. |
 | `/invite/:token` | Accept invite → redirect to that household |
-| `/h/:hid` | **Inventory**: search, category filter, low badge, thumb, −/+ steppers (consume/restock 1), long-press for quantity, swipe → add to next trip, scan button |
+| `/h/:hid` | **Inventory**: search, category filter, low badge, thumb, −/+ steppers (consume/restock 1), long-press for quantity, 🛒 toggle per row → add to / remove from next trip (a visible button rather than a swipe: discoverable, accessible, no conflict with scrolling), scan button |
 | `/h/:hid/items/new`, `/h/:hid/items/:id` | **Item detail/edit**: fields, photo, "Uses X every Y days" + pause, re-notify cadence, default restock qty, rate + window picker, event history, add to next trip (toggles to "On next trip ✓"), archive, merge into…, delete (admin + archived only) |
 | `/h/:hid/shopping` | **Shopping list**: grouped by store, tap = purchase + undo toast, long-press = quantity, free-text add box with optional store, checkbox rows for free-text |
 | `/h/:hid/settings` | Members/roles/invite link/leave, stores, units, archived items, notifications (subscribe toggle; iOS "install to home screen" hint) |
@@ -271,7 +282,7 @@ Service worker (`src/sw.ts`): Workbox precache of the shell, `push` handler (sho
 ## 8. Error handling
 
 - zod validation failure → 400 `validation_error` with field details.
-- Named codes: `archive_first` (400), `last_owner` (409), `unit_in_use` (409), `barcode_conflict` (409), `already_on_list` (409), `undo_expired` (409), `invite_invalid` (410), `photos_disabled` (503), `forbidden` (403 — role/admin failures *within* a household the caller belongs to), `not_found` (404).
+- Named codes: `archive_first` (400), `last_owner` (409), `unit_in_use` (409), `barcode_conflict` (409), `already_on_list` (409), `undo_expired` (409), `invite_invalid` (410), `rate_limited` (429), `photos_disabled` (503), `forbidden` (403 — role/admin failures *within* a household the caller belongs to), `not_found` (404).
 - Prisma unique violations are mapped to the codes above, never leaked raw.
 - Fastify error handler logs 5xx with request id; responses never include stack traces.
 - Frontend: RTK Query middleware turns error codes into toasts; optimistic stepper updates roll back on failure.
@@ -316,3 +327,5 @@ Unit conversion; Redis/queues; offline writes; email notifications; multiple pho
 8. Low-stock push is a per-household digest, not per item.
 9. Item photos implemented (handoff left `image_ref` as a placeholder).
 10. `push_subscriptions` keyed by `endpoint`.
+11. GitHub-issue feedback system added (`feedback_submissions`, `/feedback` routes).
+12. Wire format is camelCase with a `{ data }` success envelope, matching the sibling apps.
