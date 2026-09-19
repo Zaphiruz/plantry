@@ -3,7 +3,7 @@ import type { PrismaClient } from '@prisma/client';
 import { buildApp } from '../../app.js';
 import { getTestPrisma } from './db.js';
 import { createSessionStore } from '../../auth/session.js';
-import { FakeOidcClient, FakePush } from './fakes.js';
+import { FakeOidcClient, FakePush, FakeStorage } from './fakes.js';
 import { applyEvent } from '../../services/inventory.js';
 
 export interface ItemOpts { name?: string; count?: number; min?: number; storeId?: string; barcode?: string; archived?: boolean; defaultRestockQty?: number }
@@ -18,6 +18,7 @@ export interface TestCtx {
   prisma: PrismaClient;
   fakeOidc: FakeOidcClient;
   push: FakePush;
+  storage: FakeStorage;
   call(user: TestUser | null, method: string, url: string, body?: unknown, extraHeaders?: Record<string, string>): Promise<CallResult>;
   user(opts?: { name?: string; admin?: boolean }): Promise<TestUser>;
   household(owner: TestUser, name?: string): Promise<string>;
@@ -30,11 +31,13 @@ export async function createTestApp(opts: { storage?: boolean; push?: boolean } 
   const prisma = getTestPrisma();
   const fakeOidc = new FakeOidcClient();
   const push = new FakePush();
+  const storage = new FakeStorage();
   const sessions = createSessionStore(prisma, 3600);
   const app = await buildApp({
     prisma, frontendOrigin: TEST_ORIGIN, sessionSecret: 'test-secret', cookieSecure: false,
     oidcClient: fakeOidc, adminGroup: 'plantry-admins', devBypass: false, disableRateLimit: true,
     ...(opts.push === false ? {} : { push }),
+    ...(opts.storage === false ? {} : { storage }),
   });
   await app.ready();
   let n = 0;
@@ -43,6 +46,7 @@ export async function createTestApp(opts: { storage?: boolean; push?: boolean } 
     prisma,
     fakeOidc,
     push,
+    storage,
     async call(user, method, url, body, extraHeaders = {}) {
       const res = await app.inject({
         method: method as 'GET',

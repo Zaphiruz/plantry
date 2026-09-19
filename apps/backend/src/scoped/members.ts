@@ -3,6 +3,7 @@ import { householdNameSchema, memberRoleSchema, type MemberDto } from '@plantry/
 import type { Deps } from '../deps.js';
 import { parse } from '../errors.js';
 import { leaveHousehold, removeMember, setRole } from '../households/service.js';
+import { thumbKeyOf } from '../services/storage.js';
 import { requireOwner } from './index.js';
 
 export function registerMemberRoutes(s: FastifyInstance, deps: Deps): void {
@@ -25,7 +26,11 @@ export function registerMemberRoutes(s: FastifyInstance, deps: Deps): void {
 
   // NOTE: '/members/me' must be registered before '/members/:sub' reads clearly; find-my-way prefers static segments anyway.
   s.delete('/members/me', async (req, reply) => {
-    await leaveHousehold(deps.prisma, req.household!.id, req.user!.sub);
+    const result = await leaveHousehold(deps.prisma, req.household!.id, req.user!.sub);
+    if (result.householdDeleted && deps.storage && result.imageRefs.length > 0) {
+      const keys = result.imageRefs.flatMap((k) => [k, thumbKeyOf(k)]);
+      await deps.storage.remove(keys).catch((err) => req.log.error({ err }, 'household photo cleanup failed'));
+    }
     return reply.code(204).send();
   });
 

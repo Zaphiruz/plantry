@@ -26,6 +26,8 @@ const BODIES: Record<string, unknown> = {
   'POST /shopping-list-items': { name: 'x' },
   'PATCH /shopping-list-items/:id': { checkedOff: true },
   'POST /shopping-list/items/:itemId/purchase': {},
+  'POST /items/:id/photo/upload-url': { mimeType: 'image/jpeg', sizeBytes: 1000, thumbSizeBytes: 100 },
+  'POST /items/:id/photo/finalize': { key: 'h/x/items/y/z.jpg' },
 };
 const QUERY: Record<string, string> = {
   'GET /items/consumption-rates': '?window=30d',
