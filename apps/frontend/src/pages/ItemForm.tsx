@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useCreateItemMutation, useGetItemQuery, useGetStoresQuery, useGetUnitsQuery, useUpdateItemMutation } from '../api';
 import { useToast } from '../components/Toast';
@@ -27,9 +27,11 @@ export function ItemForm() {
   const navigate = useNavigate();
   const toast = useToast();
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setF((s) => ({ ...s, [k]: v }));
+  const hydratedFor = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!existing) return;
+    if (!existing || hydratedFor.current === existing.id) return;
+    hydratedFor.current = existing.id;
     setF({
       name: existing.name, description: existing.description ?? '', category: existing.category ?? '', unitId: existing.unit.id,
       preferredStoreId: existing.preferredStoreId ?? '', barcode: existing.barcode ?? '', currentCount: String(existing.currentCount),
