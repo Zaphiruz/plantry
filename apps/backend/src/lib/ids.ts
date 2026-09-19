@@ -6,5 +6,5 @@ export const isUuid = (s: unknown): s is string => typeof s === 'string' && UUID
 /** Validates a route param is a UUID; anything else is indistinguishable from "doesn't exist". */
 export function uuidParam(v: unknown): string {
   if (!isUuid(v)) throw notFound();
-  return v;
+  return v.toLowerCase();
 }

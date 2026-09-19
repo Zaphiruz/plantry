@@ -30,7 +30,7 @@ export async function registerScoped(app: FastifyInstance, deps: Deps): Promise<
         where: { householdId_userSub: { householdId: hid, userSub: req.user!.sub } },
       });
       if (!m) throw notFound();
-      req.household = { id: hid, role: m.role };
+      req.household = { id: m.householdId, role: m.role };
     });
 
     registerMemberRoutes(s, deps);
