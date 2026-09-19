@@ -5,6 +5,7 @@ import {
   useAddToListMutation, useAdjustMutation, useArchiveItemMutation, useConsolidateMutation, useDeleteItemMutation, useGetEventsQuery,
   useGetInventoryQuery, useGetItemQuery, useGetMeQuery, useGetRateQuery, useRemoveListRowMutation, useUnarchiveItemMutation,
 } from '../api';
+import { PhotoPicker } from '../components/PhotoPicker';
 import { QtyDialog } from '../components/QtyDialog';
 import { useToast } from '../components/Toast';
 import { defaultWindowFor, errorMessage, formatQty } from '../lib/format';
@@ -37,7 +38,7 @@ export function ItemDetail() {
   return (
     <div className="space-y-4 p-4">
       <div className="flex items-start gap-3">
-        <div id="photo-slot" className="shrink-0" />
+        {!archived && <PhotoPicker hid={hid} item={item} />}
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-xl font-semibold">{item.name}</h1>
           <p className={item.low ? 'font-semibold text-red-700' : 'text-slate-600'}>{formatQty(item.currentCount, item.unit)} · keep at least {formatQty(item.minStock, item.unit)}</p>
