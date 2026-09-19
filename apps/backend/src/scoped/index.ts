@@ -10,6 +10,7 @@ import { registerUnitRoutes } from './units.js';
 import { registerItemRoutes } from './items.js';
 import { registerInventoryRoutes } from './inventory.js';
 import { registerRateRoutes } from './rates.js';
+import { registerShoppingRoutes } from './shopping.js';
 
 declare module 'fastify' {
   interface FastifyRequest { household?: { id: string; role: MemberRole } }
@@ -39,6 +40,7 @@ export async function registerScoped(app: FastifyInstance, deps: Deps): Promise<
     registerRateRoutes(s, deps);
     registerItemRoutes(s, deps);
     registerInventoryRoutes(s, deps);
-    // Later tasks append: registerShoppingRoutes, registerPhotoRoutes
+    registerShoppingRoutes(s, deps);
+    // Later tasks append: registerPhotoRoutes
   }, { prefix: '/api/households/:hid' });
 }
