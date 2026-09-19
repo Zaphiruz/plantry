@@ -14,7 +14,9 @@ export class FakePush implements PushService {
   publicKey = 'fake-vapid-public-key';
   sent: { userSubs: string[]; payload: PushPayload }[] = [];
   deliverCount = 1;
+  failForTitle: string | null = null;
   async sendToUsers(userSubs: string[], payload: PushPayload): Promise<number> {
+    if (payload.title === this.failForTitle) throw new Error('push down');
     this.sent.push({ userSubs: [...userSubs].sort(), payload });
     return this.deliverCount;
   }

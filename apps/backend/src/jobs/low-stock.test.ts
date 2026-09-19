@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTestApp, type TestCtx } from '../test/helpers/test-app.js';
 import { resetDatabase } from '../test/helpers/db.js';
 
@@ -6,7 +6,7 @@ let ctx: TestCtx;
 beforeAll(async () => { ctx = await createTestApp(); });
 afterAll(async () => { await ctx.close(); });
 beforeEach(resetDatabase);
-beforeEach(() => { ctx.push.sent = []; ctx.push.deliverCount = 1; });
+beforeEach(() => { ctx.push.sent = []; ctx.push.deliverCount = 1; ctx.push.failForTitle = null; });
 
 import { digestBody, runLowStockDigest } from './low-stock.js';
 
@@ -30,7 +30,7 @@ describe('low-stock digest', () => {
     const b = await ctx.item(hid, { name: 'Filters', count: 0, min: 0 });
     await ctx.item(hid, { name: 'Fine', count: 9, min: 1 });
     const r = await runLowStockDigest(ctx.prisma, ctx.push, NOW);
-    expect(r).toEqual({ households: 1, items: 2 });
+    expect(r).toEqual({ households: 1, items: 2, failed: 0 });
     expect(ctx.push.sent).toEqual([{
       userSubs: [o.sub, m.sub].sort(),
       payload: { title: 'Casa', body: '2 items low — Cat food, Filters', url: `/h/${hid}/shopping` },
@@ -58,5 +58,19 @@ describe('low-stock digest', () => {
     expect(await notified(a.id)).toBeNull();
     await runLowStockDigest(ctx.prisma, undefined, NOW);
     expect(await notified(a.id)).toBeNull();
+  });
+
+  it('isolates a per-household push failure so other households still get digested', async () => {
+    const oa = await ctx.user(); const hidA = await ctx.household(oa, 'Alpha');
+    const itemA = await ctx.item(hidA, { count: 0, min: 1 });
+    const ob = await ctx.user(); const hidB = await ctx.household(ob, 'Beta');
+    const itemB = await ctx.item(hidB, { count: 0, min: 1 });
+    ctx.push.failForTitle = 'Alpha';
+    const log = vi.fn();
+    const r = await runLowStockDigest(ctx.prisma, ctx.push, NOW, log);
+    expect(r).toEqual({ households: 1, items: 1, failed: 1 });
+    expect(await notified(itemB.id)).not.toBeNull();
+    expect(await notified(itemA.id)).toBeNull();
+    expect(log).toHaveBeenCalledTimes(1);
   });
 });
