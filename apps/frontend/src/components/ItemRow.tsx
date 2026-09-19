@@ -23,7 +23,7 @@ export function ItemRow({ hid, item }: { hid: string; item: ItemDto }) {
       const eventId = r.eventId;
       toast.show({
         message: `${kind === 'consume' ? 'Used' : 'Added'} ${formatQty(quantity, item.unit)} · ${item.name}`,
-        ...(eventId ? { actionLabel: 'Undo', onAction: () => undo({ hid, eventId }) } : {}),
+        ...(eventId ? { actionLabel: 'Undo', onAction: () => { undo({ hid, eventId }).unwrap().catch((err) => toast.show({ message: errorMessage(err) })); } } : {}),
         durationMs: 6000,
       });
     } catch (err) { toast.show({ message: errorMessage(err) }); }

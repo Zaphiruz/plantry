@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import type { ShoppingEntry } from '@plantry/shared';
 import {
@@ -17,12 +17,19 @@ function ItemEntryRow({ hid, entry }: { hid: string; entry: ItemEntry }) {
   const [undo] = useUndoEventMutation();
   const [open, setOpen] = useState(false);
   const toast = useToast();
+  const inFlight = useRef(false);
   const buy = async (quantity?: number) => {
-    if (isLoading) return; // guard against a long-press click racing a purchase already in flight
+    if (inFlight.current) return; // synchronous guard: `isLoading` only updates after a re-render, so two
+    inFlight.current = true; // pointer-ups before that render both read stale `false` and would double-purchase
     try {
       const r = await purchase({ hid, itemId: entry.itemId, ...(quantity !== undefined ? { quantity } : {}) }).unwrap();
-      toast.show({ message: `Got ${formatQty(quantity ?? entry.quantity, entry.unit)} · ${entry.name}`, actionLabel: 'Undo', onAction: () => undo({ hid, eventId: r.eventId }), durationMs: 6000 });
-    } catch (err) { toast.show({ message: errorMessage(err) }); }
+      toast.show({
+        message: `Got ${formatQty(quantity ?? entry.quantity, entry.unit)} · ${entry.name}`,
+        actionLabel: 'Undo',
+        onAction: () => { undo({ hid, eventId: r.eventId }).unwrap().catch((err) => toast.show({ message: errorMessage(err) })); },
+        durationMs: 6000,
+      });
+    } catch (err) { toast.show({ message: errorMessage(err) }); } finally { inFlight.current = false; }
   };
   const press = useLongPress(() => setOpen(true), () => void buy());
   return (
@@ -48,8 +55,10 @@ function TextEntryRow({ hid, entry }: { hid: string; entry: TextEntry }) {
   const toast = useToast();
   return (
     <li className="flex min-h-14 items-center gap-3 border-b border-slate-100 bg-white px-3 py-2">
-      <input type="checkbox" className="h-7 w-7 shrink-0" checked={entry.checkedOff} aria-label={entry.name}
-        onChange={(e) => { check({ hid, id: entry.rowId, checkedOff: e.target.checked }).unwrap().catch((err) => toast.show({ message: errorMessage(err) })); }} />
+      <label className="flex min-h-11 min-w-11 shrink-0 items-center justify-center">
+        <input type="checkbox" className="h-7 w-7" checked={entry.checkedOff} aria-label={entry.name}
+          onChange={(e) => { check({ hid, id: entry.rowId, checkedOff: e.target.checked }).unwrap().catch((err) => toast.show({ message: errorMessage(err) })); }} />
+      </label>
       <span className={`flex-1 ${entry.checkedOff ? 'text-slate-400 line-through' : ''}`}>{entry.name}{entry.quantity ? ` × ${entry.quantity}` : ''}</span>
       <button type="button" aria-label={`Remove ${entry.name}`} className="min-h-11 min-w-11 text-slate-400"
         onClick={() => { remove({ hid, id: entry.rowId }).unwrap().catch((err) => toast.show({ message: errorMessage(err) })); }}>✕</button>

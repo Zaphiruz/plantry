@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Provider } from 'react-redux';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -28,6 +28,8 @@ const list: ShoppingListDto = {
 };
 
 const json = (body: unknown) => new Response(JSON.stringify({ data: body }), { status: 200, headers: { 'content-type': 'application/json' } });
+const errJson = (code: string, message: string, status = 409) =>
+  new Response(JSON.stringify({ error: { code, message } }), { status, headers: { 'content-type': 'application/json' } });
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -71,5 +73,48 @@ describe('Shopping screen', () => {
     expect(await screen.findByText(/Got .*Rice/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Undo' })).toBeInTheDocument();
     expect(fetchMock.mock.calls.some((c) => url(c[0]).includes('/shopping-list/items/i1/purchase'))).toBe(true);
+  });
+
+  it('does not double-purchase when two taps land before a re-render', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const u = url(input);
+      if (u.includes('/shopping-list')) return json(list);
+      if (u.includes('/stores')) return json([{ id: 's1', name: 'Costco', notes: null }]);
+      if (u.includes('/purchase')) return json({ eventId: 'e1' });
+      return json(null);
+    });
+    renderShopping(fetchMock);
+    const button = await screen.findByRole('button', { name: /Got Rice/ });
+
+    // Two full tap cycles fired synchronously in one act, before React has a chance to
+    // re-render and flip `isLoading` — both pointer-ups land while the ref-based guard
+    // (not state) is the only thing that can have already flipped.
+    act(() => {
+      fireEvent.pointerDown(button);
+      fireEvent.pointerUp(button);
+      fireEvent.pointerDown(button);
+      fireEvent.pointerUp(button);
+    });
+
+    await screen.findByText(/Got .*Rice/);
+    const purchaseCalls = fetchMock.mock.calls.filter((c) => url(c[0]).includes('/purchase'));
+    expect(purchaseCalls.length).toBe(1);
+  });
+
+  it('surfaces a toast when Undo fails', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const u = url(input);
+      if (u.includes('/shopping-list')) return json(list);
+      if (u.includes('/stores')) return json([{ id: 's1', name: 'Costco', notes: null }]);
+      if (u.includes('/purchase')) return json({ eventId: 'e1' });
+      if (u.includes('/inventory/events/')) return errJson('undo_expired', 'Too late to undo');
+      return json(null);
+    });
+    renderShopping(fetchMock);
+
+    await userEvent.click(await screen.findByRole('button', { name: /Got Rice/ }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Undo' }));
+
+    expect(await screen.findByText('Too late to undo')).toBeInTheDocument();
   });
 });
