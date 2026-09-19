@@ -79,6 +79,11 @@ export const photoUploadSchema = z.object({
 }).strict();
 export const photoFinalizeSchema = z.object({ key: z.string().min(1).max(300) }).strict();
 
+export const feedbackSchema = z.object({
+  body: z.string().trim().min(1).max(4000),
+  pageUrl: z.string().max(500).optional(),
+}).strict();
+
 export type ItemCreateInput = z.infer<typeof itemCreateSchema>;
 export type ItemUpdateInput = z.infer<typeof itemUpdateSchema>;
 export type ShoppingAddInput = z.infer<typeof shoppingAddSchema>;

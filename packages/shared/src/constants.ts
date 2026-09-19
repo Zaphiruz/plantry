@@ -10,7 +10,7 @@ export type EventType = (typeof EVENT_TYPES)[number];
 export const ERROR_CODES = [
   'validation_error', 'archive_first', 'unauthorized', 'forbidden', 'not_found', 'last_owner',
   'unit_in_use', 'barcode_conflict', 'already_on_list', 'undo_expired', 'invite_invalid',
-  'photos_disabled', 'internal',
+  'photos_disabled', 'internal', 'rate_limited',
 ] as const;
 export type ErrorCode = (typeof ERROR_CODES)[number];
 

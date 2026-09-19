@@ -1,6 +1,7 @@
 import type { OidcClient, OidcUserinfo } from '../../auth/oidc.js';
 import type { PushPayload, PushService } from '../../services/push.js';
 import type { Storage } from '../../services/storage.js';
+import type { GithubClient } from '../../services/github.js';
 
 export class FakeOidcClient implements OidcClient {
   userinfo: OidcUserinfo = { sub: 'sub-0', email: 'fake@example.com', name: 'Fake', groups: [], idToken: 'idt' };
@@ -32,5 +33,20 @@ export class FakeStorage implements Storage {
   async remove(keys: string[]): Promise<void> { for (const k of keys) this.objects.delete(k); }
   async list(prefix: string) {
     return [...this.objects].filter(([k]) => k.startsWith(prefix)).map(([key, lastModified]) => ({ key, lastModified }));
+  }
+}
+
+export class FakeGithub implements GithubClient {
+  issues: { title: string; body: string; labels?: string[] }[] = [];
+  states = new Map<number, { state: 'open' | 'closed'; state_reason: 'completed' | 'not_planned' | 'reopened' | null; closed_at: string | null }>();
+  getCalls = 0;
+  async createIssue(args: { title: string; body: string; labels?: string[] }) {
+    this.issues.push(args);
+    const number = this.issues.length;
+    return { number, html_url: `https://github.com/o/plantry/issues/${number}` };
+  }
+  async getIssue(number: number) {
+    this.getCalls++;
+    return this.states.get(number) ?? { state: 'open' as const, state_reason: null, closed_at: null };
   }
 }

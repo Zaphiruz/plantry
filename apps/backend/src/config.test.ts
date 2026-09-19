@@ -15,6 +15,11 @@ describe('config', () => {
     expect(full.vapid?.publicKey).toBe('p');
     expect(full.s3).toMatchObject({ bucket: 'b', region: 'us-east-1' });
   });
+  it('github feedback config is optional', () => {
+    expect(loadConfig(base).github).toBeNull();
+    expect(loadConfig({ ...base, GITHUB_FEEDBACK_TOKEN: 't', GITHUB_FEEDBACK_REPO: 'Zaphiruz/plantry' }).github)
+      .toEqual({ token: 't', owner: 'Zaphiruz', repo: 'plantry' });
+  });
   it('throws on missing required vars', () => {
     expect(() => loadConfig({ ...base, SESSION_SECRET: '' })).toThrow(/SESSION_SECRET/);
   });

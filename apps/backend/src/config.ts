@@ -7,6 +7,7 @@ export interface AppConfig {
   oidc: { issuer: string; clientId: string; clientSecret: string; redirectUri: string };
   vapid: PushConfig | null;
   s3: S3Config | null;
+  github: { token: string; owner: string; repo: string } | null;
 }
 type Env = Record<string, string | undefined>;
 
@@ -27,6 +28,8 @@ export function loadConfig(env: Env = process.env): AppConfig {
     ? { endpoint: env['S3_ENDPOINT'], publicEndpoint: env['S3_PUBLIC_ENDPOINT'] ?? env['S3_ENDPOINT'], region: env['S3_REGION'] ?? 'us-east-1',
         bucket: env['S3_BUCKET'], accessKey: env['S3_ACCESS_KEY'], secretKey: env['S3_SECRET_KEY'] }
     : null;
+  const [ghOwner, ghRepo] = (env['GITHUB_FEEDBACK_REPO'] ?? '').split('/');
+  const github = env['GITHUB_FEEDBACK_TOKEN'] && ghOwner && ghRepo ? { token: env['GITHUB_FEEDBACK_TOKEN'], owner: ghOwner, repo: ghRepo } : null;
 
   return {
     port: Number(env['PORT'] ?? '3000'), nodeEnv,
@@ -40,6 +43,6 @@ export function loadConfig(env: Env = process.env): AppConfig {
       issuer: required('AUTHENTIK_ISSUER_URL'), clientId: required('AUTHENTIK_CLIENT_ID'),
       clientSecret: required('AUTHENTIK_CLIENT_SECRET'), redirectUri: required('AUTHENTIK_REDIRECT_URI'),
     },
-    vapid, s3,
+    vapid, s3, github,
   };
 }

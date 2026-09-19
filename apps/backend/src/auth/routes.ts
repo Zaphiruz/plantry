@@ -15,6 +15,7 @@ export interface AuthRouteDeps {
   frontendOrigin: string;
   photosEnabled: boolean;
   pushEnabled: boolean;
+  feedbackEnabled: boolean;
 }
 
 interface PkcePayload { state: string; nonce: string; codeVerifier: string }
@@ -99,6 +100,7 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthRouteDeps): v
       households: memberships.map((m) => ({ id: m.householdId, name: m.household.name, role: m.role })),
       photosEnabled: deps.photosEnabled,
       pushEnabled: deps.pushEnabled,
+      feedbackEnabled: deps.feedbackEnabled,
     };
     return { data };
   });

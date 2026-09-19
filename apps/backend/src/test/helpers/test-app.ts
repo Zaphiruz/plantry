@@ -3,7 +3,7 @@ import type { PrismaClient } from '@prisma/client';
 import { buildApp } from '../../app.js';
 import { getTestPrisma } from './db.js';
 import { createSessionStore } from '../../auth/session.js';
-import { FakeOidcClient, FakePush, FakeStorage } from './fakes.js';
+import { FakeGithub, FakeOidcClient, FakePush, FakeStorage } from './fakes.js';
 import { applyEvent } from '../../services/inventory.js';
 
 export interface ItemOpts { name?: string; count?: number; min?: number; storeId?: string; barcode?: string; archived?: boolean; defaultRestockQty?: number }
@@ -19,6 +19,7 @@ export interface TestCtx {
   fakeOidc: FakeOidcClient;
   push: FakePush;
   storage: FakeStorage;
+  github: FakeGithub;
   call(user: TestUser | null, method: string, url: string, body?: unknown, extraHeaders?: Record<string, string>): Promise<CallResult>;
   user(opts?: { name?: string; admin?: boolean }): Promise<TestUser>;
   household(owner: TestUser, name?: string): Promise<string>;
@@ -27,17 +28,19 @@ export interface TestCtx {
   close(): Promise<void>;
 }
 
-export async function createTestApp(opts: { storage?: boolean; push?: boolean } = {}): Promise<TestCtx> {
+export async function createTestApp(opts: { storage?: boolean; push?: boolean; github?: boolean } = {}): Promise<TestCtx> {
   const prisma = getTestPrisma();
   const fakeOidc = new FakeOidcClient();
   const push = new FakePush();
   const storage = new FakeStorage();
+  const github = new FakeGithub();
   const sessions = createSessionStore(prisma, 3600);
   const app = await buildApp({
     prisma, frontendOrigin: TEST_ORIGIN, sessionSecret: 'test-secret', cookieSecure: false,
     oidcClient: fakeOidc, adminGroup: 'plantry-admins', devBypass: false, disableRateLimit: true,
     ...(opts.push === false ? {} : { push }),
     ...(opts.storage === false ? {} : { storage }),
+    ...(opts.github === false ? {} : { github }),
   });
   await app.ready();
   let n = 0;
@@ -47,6 +50,7 @@ export async function createTestApp(opts: { storage?: boolean; push?: boolean } 
     fakeOidc,
     push,
     storage,
+    github,
     async call(user, method, url, body, extraHeaders = {}) {
       const res = await app.inject({
         method: method as 'GET',

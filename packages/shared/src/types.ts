@@ -3,7 +3,7 @@ import type { EventType, RateWindow } from './constants.js';
 export type MemberRole = 'owner' | 'member';
 export interface UserDto { sub: string; name: string; email: string; isAdmin: boolean }
 export interface HouseholdSummary { id: string; name: string; role: MemberRole }
-export interface MeDto { user: UserDto; households: HouseholdSummary[]; photosEnabled: boolean; pushEnabled: boolean }
+export interface MeDto { user: UserDto; households: HouseholdSummary[]; photosEnabled: boolean; pushEnabled: boolean; feedbackEnabled: boolean }
 export interface MemberDto { sub: string; name: string; email: string; role: MemberRole; joinedAt: string }
 export interface InviteDto { url: string; expiresAt: string }
 export interface StoreDto { id: string; name: string; notes: string | null }
@@ -38,3 +38,8 @@ export interface PurchaseResultDto { eventId: string }
 
 export interface PhotoUploadDto { key: string; uploadUrl: string; thumbUploadUrl: string }
 export interface ApiError { error: { code: string; message: string; details?: unknown } }
+
+export interface FeedbackDto {
+  id: string; issueNumber: number; issueUrl: string; title: string; createdAt: string;
+  status: 'open' | 'done' | 'closed'; closedAt: string | null;
+}

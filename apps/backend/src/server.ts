@@ -5,6 +5,7 @@ import { loadConfig } from './config.js';
 import { startDailySchedule } from './jobs/daily.js';
 import { createPushService } from './services/push.js';
 import { createS3Storage } from './services/storage.js';
+import { createGithubClient } from './services/github.js';
 
 const config = loadConfig();
 const prisma = new PrismaClient();
@@ -12,6 +13,7 @@ const storage = config.s3 ? createS3Storage(config.s3) : undefined;
 const push = config.vapid
   ? createPushService(prisma, config.vapid, (err, msg) => console.error(JSON.stringify({ level: 'error', msg, err: String(err) })))
   : undefined;
+const github = config.github ? createGithubClient(config.github) : undefined;
 
 const app = await buildApp({
   logger: true,
@@ -24,6 +26,7 @@ const app = await buildApp({
   oidcClient: createOidcClient(config.oidc),
   ...(storage ? { storage } : {}),
   ...(push ? { push } : {}),
+  ...(github ? { github } : {}),
 });
 
 const schedule = startDailySchedule(
@@ -39,4 +42,4 @@ for (const sig of ['SIGINT', 'SIGTERM'] as const) {
 }
 
 await app.listen({ host: '0.0.0.0', port: config.port });
-app.log.info({ photos: !!storage, push: !!push, devBypass: config.devBypass }, 'plantry backend ready');
+app.log.info({ photos: !!storage, push: !!push, feedback: !!github, devBypass: config.devBypass }, 'plantry backend ready');

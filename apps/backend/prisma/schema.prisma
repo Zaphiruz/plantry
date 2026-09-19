@@ -36,6 +36,7 @@ model User {
   merges          ItemMerge[]
   listRows        ShoppingListItem[]
   pushSubs        PushSubscription[]
+  feedback        FeedbackSubmission[]
 
   @@map("users")
 }
@@ -238,4 +239,21 @@ model JobRun {
   startedAt DateTime? @map("started_at") @db.Timestamptz(6)
 
   @@map("job_runs")
+}
+
+model FeedbackSubmission {
+  id             String    @id @default(uuid()) @db.Uuid
+  userSub        String    @map("user_sub")
+  issueNumber    Int       @map("issue_number")
+  issueUrl       String    @map("issue_url")
+  title          String
+  state          String?
+  stateReason    String?   @map("state_reason")
+  closedAt       DateTime? @map("closed_at") @db.Timestamptz(6)
+  stateFetchedAt DateTime? @map("state_fetched_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  user           User      @relation(fields: [userSub], references: [sub], onDelete: Cascade)
+
+  @@index([userSub, createdAt])
+  @@map("feedback_submissions")
 }

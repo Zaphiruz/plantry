@@ -12,9 +12,11 @@ import type { OidcClient } from './auth/oidc.js';
 import { registerHouseholdRoutes } from './households/routes.js';
 import { registerInviteAcceptRoute } from './households/invites.js';
 import { registerPushRoutes } from './routes/push.js';
+import { registerFeedbackRoutes } from './routes/feedback.js';
 import { registerScoped } from './scoped/index.js';
 import type { PushService } from './services/push.js';
 import type { Storage } from './services/storage.js';
+import type { GithubClient } from './services/github.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -35,6 +37,7 @@ export interface BuildAppOptions {
   disableRateLimit?: boolean;
   push?: PushService;
   storage?: Storage;
+  github?: GithubClient;
 }
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
@@ -45,6 +48,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     prisma: options.prisma, frontendOrigin: options.frontendOrigin,
     ...(options.push ? { push: options.push } : {}),
     ...(options.storage ? { storage: options.storage } : {}),
+    ...(options.github ? { github: options.github } : {}),
   };
 
   app.decorate('routeTable', []);
@@ -95,7 +99,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   const authDeps: AuthRouteDeps = {
     prisma: options.prisma, sessionStore, oidcClient: options.oidcClient, cookieName,
     cookieSecure: options.cookieSecure, ttlSeconds, frontendOrigin: options.frontendOrigin,
-    photosEnabled: !!options.storage, pushEnabled: !!options.push,
+    photosEnabled: !!options.storage, pushEnabled: !!options.push, feedbackEnabled: !!options.github,
   };
   registerAuthRoutes(app, authDeps);
   if (options.devBypass) registerDevBypass(app, authDeps, adminGroup);
@@ -103,6 +107,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   registerHouseholdRoutes(app, deps);
   registerInviteAcceptRoute(app, deps);
   registerPushRoutes(app, deps);
+  if (deps.github) registerFeedbackRoutes(app, { ...deps, github: deps.github });
   await registerScoped(app, deps);
 
   return app;
