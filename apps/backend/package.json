@@ -1,0 +1,41 @@
+{
+  "name": "@plantry/backend",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "dotenv -e ../../.env -- tsx watch src/server.ts",
+    "build": "tsup",
+    "start": "node dist/server.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:db:setup": "node scripts/test-db-setup.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "prisma": "dotenv -e ../../.env -- prisma"
+  },
+  "prisma": { "schema": "prisma/schema.prisma" },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.668.0",
+    "@aws-sdk/s3-request-presigner": "^3.668.0",
+    "@fastify/cookie": "^11.0.1",
+    "@fastify/rate-limit": "^10.2.1",
+    "@plantry/shared": "workspace:*",
+    "@prisma/client": "^5.22.0",
+    "fastify": "^5.1.0",
+    "node-cron": "^3.0.3",
+    "openid-client": "^5.7.0",
+    "web-push": "^3.6.7",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "@types/node-cron": "^3.0.11",
+    "@types/web-push": "^3.6.4",
+    "dotenv-cli": "^7.4.2",
+    "prisma": "^5.22.0",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.5"
+  }
+}
