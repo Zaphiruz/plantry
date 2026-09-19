@@ -1,0 +1,14 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer components {
+  .btn { @apply inline-flex min-h-11 items-center justify-center rounded-lg px-4 font-medium disabled:opacity-40; }
+  .btn-primary { @apply btn bg-green-800 text-white active:bg-green-900; }
+  .btn-ghost { @apply btn border border-slate-300 bg-white active:bg-slate-100; }
+  .btn-danger { @apply btn bg-red-700 text-white active:bg-red-800; }
+  .input { @apply min-h-11 w-full rounded-lg border border-slate-300 bg-white px-3; }
+  .card { @apply rounded-xl border border-slate-200 bg-white p-4; }
+  .label { @apply mb-1 block text-sm font-medium text-slate-600; }
+}
+fieldset { @apply m-0 min-w-0 border-0 p-0; }
