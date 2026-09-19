@@ -1,0 +1,33 @@
+import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { MemberRole } from '@prisma/client';
+import type { Deps } from '../deps.js';
+import { forbidden, notFound } from '../errors.js';
+import { isUuid } from '../lib/ids.js';
+import { registerMemberRoutes } from './members.js';
+
+declare module 'fastify' {
+  interface FastifyRequest { household?: { id: string; role: MemberRole } }
+}
+
+export function requireOwner(req: FastifyRequest): void {
+  if (req.household?.role !== 'owner') throw forbidden('Owner required');
+}
+
+export async function registerScoped(app: FastifyInstance, deps: Deps): Promise<void> {
+  await app.register(async (s) => {
+    s.addHook('preHandler', app.requireAuth);
+    s.addHook('preHandler', async (req) => {
+      const hid = (req.params as { hid?: string }).hid;
+      if (!isUuid(hid)) throw notFound();
+      const m = await deps.prisma.householdMember.findUnique({
+        where: { householdId_userSub: { householdId: hid, userSub: req.user!.sub } },
+      });
+      if (!m) throw notFound();
+      req.household = { id: hid, role: m.role };
+    });
+
+    registerMemberRoutes(s, deps);
+    // Later tasks append: registerInviteCreateRoute, registerStoreRoutes, registerUnitRoutes, registerItemRoutes,
+    // registerInventoryRoutes, registerRateRoutes, registerShoppingRoutes, registerPhotoRoutes
+  }, { prefix: '/api/households/:hid' });
+}

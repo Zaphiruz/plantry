@@ -9,6 +9,8 @@ import { registerAuthRoutes, type AuthRouteDeps } from './auth/routes.js';
 import { registerDevBypass } from './auth/dev-bypass.js';
 import { createSessionStore } from './auth/session.js';
 import type { OidcClient } from './auth/oidc.js';
+import { registerHouseholdRoutes } from './households/routes.js';
+import { registerScoped } from './scoped/index.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -34,7 +36,6 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 export async function buildApp(options: BuildAppOptions): Promise<FastifyInstance> {
   const app = Fastify({ logger: options.logger ?? false, trustProxy: true });
   const deps: Deps = { prisma: options.prisma, frontendOrigin: options.frontendOrigin };
-  void deps; // consumed by route registration added in later tasks
 
   app.decorate('routeTable', []);
   app.addHook('onRoute', (r) => {
@@ -88,6 +89,9 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   };
   registerAuthRoutes(app, authDeps);
   if (options.devBypass) registerDevBypass(app, authDeps, adminGroup);
+
+  registerHouseholdRoutes(app, deps);
+  await registerScoped(app, deps);
 
   return app;
 }

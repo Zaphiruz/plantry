@@ -16,6 +16,8 @@ export interface TestCtx {
   fakeOidc: FakeOidcClient;
   call(user: TestUser | null, method: string, url: string, body?: unknown, extraHeaders?: Record<string, string>): Promise<CallResult>;
   user(opts?: { name?: string; admin?: boolean }): Promise<TestUser>;
+  household(owner: TestUser, name?: string): Promise<string>;
+  addMember(hid: string, user: TestUser, role?: 'owner' | 'member'): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -56,6 +58,15 @@ export async function createTestApp(): Promise<TestCtx> {
       await prisma.user.create({ data: { sub, name, email: `u${n}@example.com`, lastLoginAt: new Date() } });
       const sid = await sessions.create(sub, { groups: opts.admin ? ['plantry-admins'] : [] });
       return { sub, name, cookie: `${TEST_COOKIE}=${sid}` };
+    },
+    async household(owner, name = 'Casa') {
+      const h = await prisma.household.create({
+        data: { name, members: { create: { userSub: owner.sub, role: 'owner' } } },
+      });
+      return h.id;
+    },
+    async addMember(hid, user, role = 'member') {
+      await prisma.householdMember.create({ data: { householdId: hid, userSub: user.sub, role } });
     },
     async close() { await app.close(); },
   };
