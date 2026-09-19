@@ -1,10 +1,11 @@
 import type { FastifyInstance } from 'fastify';
 import { Prisma } from '@prisma/client';
-import { itemCreateSchema, itemUpdateSchema } from '@plantry/shared';
+import { consolidateSchema, itemCreateSchema, itemUpdateSchema } from '@plantry/shared';
 import type { Deps } from '../deps.js';
 import { AppError, parse } from '../errors.js';
+import { uuidParam } from '../lib/ids.js';
 import { applyEvent } from '../services/inventory.js';
-import { itemInclude, loadItem, serializeItem } from '../services/items.js';
+import { consolidate, itemInclude, loadItem, serializeItem } from '../services/items.js';
 import { thumbKeyOf } from '../services/storage.js';
 
 const barcodeConflict = () => new AppError(409, 'barcode_conflict', 'Another active item already uses this barcode');
@@ -136,6 +137,16 @@ export function registerItemRoutes(s: FastifyInstance, deps: Deps): void {
       throw e;
     }
     return { data: await serializeItem(await loadItem(deps, hid, item.id), deps.storage) };
+  });
+
+  s.post<{ Params: { targetId: string } }>('/items/:targetId/consolidate', async (req) => {
+    const hid = req.household!.id;
+    const b = parse(consolidateSchema, req.body);
+    await consolidate(prisma, {
+      hid, targetId: uuidParam(req.params.targetId), sourceId: b.sourceId,
+      keepMinStockFrom: b.keepMinStockFrom, userSub: req.user!.sub,
+    });
+    return { data: await serializeItem(await loadItem(deps, hid, req.params.targetId), deps.storage) };
   });
 
   s.delete<{ Params: { id: string } }>('/items/:id', { preHandler: s.requireAdmin }, async (req, reply) => {

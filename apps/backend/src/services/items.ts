@@ -1,7 +1,7 @@
-import type { Prisma } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 import type { ItemDto } from '@plantry/shared';
 import type { Deps } from '../deps.js';
-import { notFound } from '../errors.js';
+import { AppError, notFound } from '../errors.js';
 import { uuidParam } from '../lib/ids.js';
 import { num, numOrNull } from '../lib/num.js';
 import { toUnitDto } from '../scoped/units.js';
@@ -46,4 +46,59 @@ export async function loadItem(deps: Deps, hid: string, id: unknown, opts: { all
   });
   if (!item) throw notFound();
   return item;
+}
+
+export interface ConsolidateArgs { hid: string; targetId: string; sourceId: string; keepMinStockFrom: 'target' | 'source'; userSub: string }
+
+/** Spec §5.6. Non-destructive: the source is archived, never deleted. One transaction. */
+export async function consolidate(prisma: PrismaClient, a: ConsolidateArgs): Promise<void> {
+  if (a.targetId === a.sourceId) throw new AppError(400, 'validation_error', 'Cannot merge an item into itself');
+  await prisma.$transaction(async (tx) => {
+    // Lock both inventory rows FOR UPDATE, in a deterministic order, before reading anything —
+    // avoids deadlock/races with a concurrent consolidate or restock touching either row.
+    const [id1, id2] = [a.targetId, a.sourceId].sort();
+    const locked = await tx.$queryRaw<{ item_id: string; current_count: Prisma.Decimal; min_stock: Prisma.Decimal }[]>`
+      SELECT item_id, current_count, min_stock FROM inventory WHERE item_id IN (${id1}::uuid, ${id2}::uuid) ORDER BY item_id FOR UPDATE
+    `;
+    const invById = new Map(locked.map((r) => [r.item_id, r]));
+
+    const load = (id: string) => tx.item.findFirst({ where: { id, householdId: a.hid, archivedAt: null }, include: itemInclude });
+    const [target, source] = await Promise.all([load(a.targetId), load(a.sourceId)]);
+    if (!target || !source) throw notFound();
+    const targetInv = invById.get(target.id);
+    const sourceInv = invById.get(source.id);
+    if (!targetInv || !sourceInv) throw notFound();
+
+    await tx.inventoryEvent.updateMany({ where: { itemId: source.id }, data: { itemId: target.id } });
+
+    const minStock = a.keepMinStockFrom === 'source' ? sourceInv.min_stock : targetInv.min_stock;
+    const tInv = await tx.inventory.update({
+      where: { itemId: target.id },
+      data: { currentCount: { increment: sourceInv.current_count }, minStock },
+    });
+    if (tInv.lastNotifiedAt && tInv.currentCount.gt(tInv.minStock)) {
+      await tx.inventory.update({ where: { itemId: target.id }, data: { lastNotifiedAt: null } });
+    }
+    await tx.inventory.update({ where: { itemId: source.id }, data: { currentCount: 0 } });
+
+    const targetHasRow = await tx.shoppingListItem.findFirst({ where: { itemId: target.id, checkedOff: false } });
+    if (targetHasRow) await tx.shoppingListItem.deleteMany({ where: { itemId: source.id } });
+    else await tx.shoppingListItem.updateMany({ where: { itemId: source.id }, data: { itemId: target.id, name: target.name } });
+
+    await tx.item.update({
+      where: { id: source.id },
+      data: {
+        barcode: null, archivedAt: new Date(), archivedBy: a.userSub,
+        ...(!target.imageRef && source.imageRef ? { imageRef: null } : {}),
+      },
+    });
+    await tx.item.update({
+      where: { id: target.id },
+      data: {
+        ...(!target.barcode && source.barcode ? { barcode: source.barcode } : {}),
+        ...(!target.imageRef && source.imageRef ? { imageRef: source.imageRef } : {}),
+      },
+    });
+    await tx.itemMerge.create({ data: { sourceId: source.id, targetId: target.id, mergedBy: a.userSub } });
+  });
 }
