@@ -20,9 +20,11 @@ export function ItemRow({ hid, item }: { hid: string; item: ItemDto }) {
   const act = async (kind: 'consume' | 'restock', quantity: number) => {
     try {
       const r = await (kind === 'consume' ? consume : restock)({ hid, itemId: item.id, quantity }).unwrap();
+      const eventId = r.eventId;
       toast.show({
         message: `${kind === 'consume' ? 'Used' : 'Added'} ${formatQty(quantity, item.unit)} · ${item.name}`,
-        actionLabel: 'Undo', onAction: () => r.eventId && undo({ hid, eventId: r.eventId }), durationMs: 6000,
+        ...(eventId ? { actionLabel: 'Undo', onAction: () => undo({ hid, eventId }) } : {}),
+        durationMs: 6000,
       });
     } catch (err) { toast.show({ message: errorMessage(err) }); }
   };
@@ -50,8 +52,8 @@ export function ItemRow({ hid, item }: { hid: string; item: ItemDto }) {
       </Link>
       <button type="button" aria-label={item.nextTripRowId ? `Remove ${item.name} from next trip` : `Add ${item.name} to next trip`} aria-pressed={!!item.nextTripRowId}
         className={`min-h-11 min-w-11 rounded-lg text-xl ${item.nextTripRowId ? 'bg-green-100 text-green-800' : 'text-slate-400'}`} onClick={toggleTrip}>🛒</button>
-      <button type="button" aria-label={`Use 1 ${item.name}`} className="btn-ghost min-w-11 px-0 text-xl" {...minus}>−</button>
-      <button type="button" aria-label={`Add 1 ${item.name}`} className="btn-ghost min-w-11 px-0 text-xl" {...plus}>+</button>
+      <button type="button" aria-label={`Use 1 ${item.name}`} className="btn-ghost min-w-11 touch-manipulation px-0 text-xl" {...minus}>−</button>
+      <button type="button" aria-label={`Add 1 ${item.name}`} className="btn-ghost min-w-11 touch-manipulation px-0 text-xl" {...plus}>+</button>
       <QtyDialog open={dialog !== null} title={dialog === 'consume' ? `Use ${item.name}` : `Restock ${item.name}`}
         initial={dialog === 'restock' ? item.defaultRestockQty : 1} unitLabel={unitLabel}
         onConfirm={(n) => dialog && void act(dialog, n)} onClose={() => setDialog(null)} />
