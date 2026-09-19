@@ -6,9 +6,8 @@ import { Inventory } from './pages/Inventory';
 import { InviteAccept } from './pages/InviteAccept';
 import { ItemDetail } from './pages/ItemDetail';
 import { ItemForm } from './pages/ItemForm';
+import { Settings } from './pages/Settings';
 import { Shopping } from './pages/Shopping';
-
-const Placeholder = ({ name }: { name: string }) => <p className="p-4 text-slate-500">{name} — coming in a later task</p>;
 
 export function App() {
   const { data: me, isLoading } = useGetMeQuery();
@@ -23,7 +22,7 @@ export function App() {
         <Route path="items/:id" element={<ItemDetail />} />
         <Route path="items/:id/edit" element={<ItemForm />} />
         <Route path="shopping" element={<Shopping />} />
-        <Route path="settings" element={<Placeholder name="Settings" />} />
+        <Route path="settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<HouseholdPicker />} />
     </Routes>
