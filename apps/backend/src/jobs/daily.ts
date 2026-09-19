@@ -7,6 +7,7 @@ import { runSweeps } from './sweeps.js';
 export interface JobLog { info(obj: unknown, msg?: string): void; error(obj: unknown, msg?: string): void }
 const JOB = 'daily';
 const STALE_CLAIM_MS = 60 * 60 * 1000;
+const MIN_GAP_MS = 60_000;
 
 export const shouldCatchUp = (lastRunAt: Date | null, now: Date): boolean =>
   !lastRunAt || now.getTime() - lastRunAt.getTime() > 24 * 60 * 60 * 1000;
@@ -16,13 +17,16 @@ async function claim(deps: Deps, now: Date): Promise<boolean> {
   const stale = new Date(now.getTime() - STALE_CLAIM_MS);
   // Both conditions matter: `started_at` guards against a second claim while a run is in flight (or
   // stuck/crashed, via the staleness window); `last_run_at` guards against a second claim landing
-  // *after* a concurrent run already finished and reset started_at to null for this same `now` — a
-  // fast job (e.g. an empty test fixture) can complete before a racing caller's INSERT is even sent.
+  // *after* a concurrent run already finished and reset started_at to null. A run that completed less
+  // than a minute ago blocks a new claim — this covers both same-`now` test calls and real
+  // near-simultaneous starts (boot catch-up vs. a cron tick, which always pass distinct `new Date()`
+  // values). An operator forces a re-run by deleting the job_runs row.
+  const recent = new Date(now.getTime() - MIN_GAP_MS);
   const rows = await deps.prisma.$queryRaw<{ job: string }[]>`
     INSERT INTO job_runs (job, started_at) VALUES (${JOB}, ${now})
     ON CONFLICT (job) DO UPDATE SET started_at = ${now}
       WHERE (job_runs.started_at IS NULL OR job_runs.started_at < ${stale})
-        AND (job_runs.last_run_at IS NULL OR job_runs.last_run_at < ${now})
+        AND (job_runs.last_run_at IS NULL OR job_runs.last_run_at <= ${recent})
     RETURNING job`;
   return rows.length === 1;
 }

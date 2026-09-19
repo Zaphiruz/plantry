@@ -39,6 +39,12 @@ describe('daily runner', () => {
     expect((await runDaily(deps(), NOW, log)).ran).toBe(true);
   });
 
+  it('a near-simultaneous distinct `now` cannot reclaim a just-completed run; a minute later it can', async () => {
+    expect(await runDaily(deps(), NOW, log)).toEqual({ ran: true });
+    expect(await runDaily(deps(), new Date(NOW.getTime() + 5_000), log)).toEqual({ ran: false });
+    expect(await runDaily(deps(), new Date(NOW.getTime() + 61_000), log)).toEqual({ ran: true });
+  });
+
   it('shouldCatchUp', () => {
     expect(shouldCatchUp(null, NOW)).toBe(true);
     expect(shouldCatchUp(new Date(NOW.getTime() - 25 * 3_600_000), NOW)).toBe(true);
