@@ -51,20 +51,27 @@ export async function loadItem(deps: Deps, hid: string, id: unknown, opts: { all
 export interface ConsolidateArgs { hid: string; targetId: string; sourceId: string; keepMinStockFrom: 'target' | 'source'; userSub: string }
 
 /** Spec §5.6. Non-destructive: the source is archived, never deleted. One transaction. */
-export async function consolidate(prisma: PrismaClient, a: ConsolidateArgs): Promise<void> {
+export async function consolidate(prisma: PrismaClient, rawArgs: ConsolidateArgs): Promise<void> {
+  // UUIDs validate case-insensitively (uuidParam's regex, zod's .uuid()); normalize so a
+  // same-item-different-casing pair can't slip past the self-merge guard below.
+  const a = { ...rawArgs, targetId: rawArgs.targetId.toLowerCase(), sourceId: rawArgs.sourceId.toLowerCase() };
   if (a.targetId === a.sourceId) throw new AppError(400, 'validation_error', 'Cannot merge an item into itself');
   await prisma.$transaction(async (tx) => {
-    // Lock both inventory rows FOR UPDATE, in a deterministic order, before reading anything —
-    // avoids deadlock/races with a concurrent consolidate or restock touching either row.
-    const [id1, id2] = [a.targetId, a.sourceId].sort();
+    // Load (household-scoped, not archived) BEFORE taking any lock, so a caller can't lock
+    // another household's inventory row by naming an id outside their household.
+    const load = (id: string) => tx.item.findFirst({ where: { id, householdId: a.hid, archivedAt: null } });
+    const [target, source] = await Promise.all([load(a.targetId), load(a.sourceId)]);
+    if (!target || !source) throw notFound();
+    // Defense in depth: even if two different-cased ids somehow resolved to the same row.
+    if (target.id === source.id) throw new AppError(400, 'validation_error', 'Cannot merge an item into itself');
+
+    // Lock both inventory rows FOR UPDATE, in a deterministic order, before reading their
+    // values — avoids deadlock/races with a concurrent consolidate or restock touching either row.
+    const [id1, id2] = [target.id, source.id].sort();
     const locked = await tx.$queryRaw<{ item_id: string; current_count: Prisma.Decimal; min_stock: Prisma.Decimal }[]>`
       SELECT item_id, current_count, min_stock FROM inventory WHERE item_id IN (${id1}::uuid, ${id2}::uuid) ORDER BY item_id FOR UPDATE
     `;
     const invById = new Map(locked.map((r) => [r.item_id, r]));
-
-    const load = (id: string) => tx.item.findFirst({ where: { id, householdId: a.hid, archivedAt: null }, include: itemInclude });
-    const [target, source] = await Promise.all([load(a.targetId), load(a.sourceId)]);
-    if (!target || !source) throw notFound();
     const targetInv = invById.get(target.id);
     const sourceInv = invById.get(source.id);
     if (!targetInv || !sourceInv) throw notFound();
@@ -82,8 +89,8 @@ export async function consolidate(prisma: PrismaClient, a: ConsolidateArgs): Pro
     await tx.inventory.update({ where: { itemId: source.id }, data: { currentCount: 0 } });
 
     const targetHasRow = await tx.shoppingListItem.findFirst({ where: { itemId: target.id, checkedOff: false } });
-    if (targetHasRow) await tx.shoppingListItem.deleteMany({ where: { itemId: source.id } });
-    else await tx.shoppingListItem.updateMany({ where: { itemId: source.id }, data: { itemId: target.id, name: target.name } });
+    if (targetHasRow) await tx.shoppingListItem.deleteMany({ where: { itemId: source.id, checkedOff: false } });
+    else await tx.shoppingListItem.updateMany({ where: { itemId: source.id, checkedOff: false }, data: { itemId: target.id, name: target.name } });
 
     await tx.item.update({
       where: { id: source.id },

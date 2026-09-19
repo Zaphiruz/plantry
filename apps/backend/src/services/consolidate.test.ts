@@ -38,6 +38,18 @@ describe('consolidate', () => {
     expect((await ctx.call(u, 'POST', `${base}/items/${a.id}/consolidate`, { sourceId: gone.id })).status).toBe(404);
   });
 
+  it('rejects self-merge even when the ids differ only by case', async () => {
+    const u = await ctx.user(); const hid = await ctx.household(u); const base = `/api/households/${hid}`;
+    const a = await ctx.item(hid, { count: 4 });
+    const r = await ctx.call(u, 'POST', `${base}/items/${a.id}/consolidate`, { sourceId: a.id.toUpperCase() });
+    expect(r.status).toBe(400);
+
+    const after = await ctx.prisma.item.findUniqueOrThrow({ where: { id: a.id }, include: { inventory: true } });
+    expect(after.archivedAt).toBeNull();
+    expect(Number(after.inventory!.currentCount)).toBe(4);
+    expect(await ctx.prisma.inventoryEvent.count({ where: { itemId: a.id } })).toBe(1);
+  });
+
   it('is atomic: a failure at the last step leaves everything untouched', async () => {
     const u = await ctx.user(); const hid = await ctx.household(u);
     const target = await ctx.item(hid, { count: 2 }); const source = await ctx.item(hid, { count: 3, barcode: '777' });
