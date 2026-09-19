@@ -10,6 +10,7 @@ import { registerDevBypass } from './auth/dev-bypass.js';
 import { createSessionStore } from './auth/session.js';
 import type { OidcClient } from './auth/oidc.js';
 import { registerHouseholdRoutes } from './households/routes.js';
+import { registerInviteAcceptRoute } from './households/invites.js';
 import { registerScoped } from './scoped/index.js';
 
 declare module 'fastify' {
@@ -91,6 +92,7 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
   if (options.devBypass) registerDevBypass(app, authDeps, adminGroup);
 
   registerHouseholdRoutes(app, deps);
+  registerInviteAcceptRoute(app, deps);
   await registerScoped(app, deps);
 
   return app;

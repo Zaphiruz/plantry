@@ -4,6 +4,7 @@ import type { Deps } from '../deps.js';
 import { forbidden, notFound } from '../errors.js';
 import { isUuid } from '../lib/ids.js';
 import { registerMemberRoutes } from './members.js';
+import { registerInviteCreateRoute } from '../households/invites.js';
 
 declare module 'fastify' {
   interface FastifyRequest { household?: { id: string; role: MemberRole } }
@@ -27,7 +28,8 @@ export async function registerScoped(app: FastifyInstance, deps: Deps): Promise<
     });
 
     registerMemberRoutes(s, deps);
-    // Later tasks append: registerInviteCreateRoute, registerStoreRoutes, registerUnitRoutes, registerItemRoutes,
+    registerInviteCreateRoute(s, deps);
+    // Later tasks append: registerStoreRoutes, registerUnitRoutes, registerItemRoutes,
     // registerInventoryRoutes, registerRateRoutes, registerShoppingRoutes, registerPhotoRoutes
   }, { prefix: '/api/households/:hid' });
 }
