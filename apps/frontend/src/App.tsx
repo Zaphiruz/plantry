@@ -2,6 +2,7 @@ import { Route, Routes } from 'react-router-dom';
 import { useGetMeQuery } from './api';
 import { Layout } from './components/Layout';
 import { HouseholdPicker } from './pages/HouseholdPicker';
+import { Inventory } from './pages/Inventory';
 import { InviteAccept } from './pages/InviteAccept';
 
 const Placeholder = ({ name }: { name: string }) => <p className="p-4 text-slate-500">{name} — coming in a later task</p>;
@@ -14,7 +15,7 @@ export function App() {
       <Route path="/" element={<HouseholdPicker />} />
       <Route path="/invite/:token" element={<InviteAccept />} />
       <Route path="/h/:hid" element={<Layout />}>
-        <Route index element={<Placeholder name="Inventory" />} />
+        <Route index element={<Inventory />} />
         <Route path="items/new" element={<Placeholder name="New item" />} />
         <Route path="items/:id" element={<Placeholder name="Item" />} />
         <Route path="items/:id/edit" element={<Placeholder name="Edit item" />} />
