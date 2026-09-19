@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import type { PrismaClient } from '@prisma/client';
 import { createTestApp, type TestCtx } from '../test/helpers/test-app.js';
 import { resetDatabase } from '../test/helpers/db.js';
+import { acceptInvite } from './invites.js';
 
 let ctx: TestCtx;
 beforeAll(async () => { ctx = await createTestApp(); });
@@ -50,5 +52,46 @@ describe('invites', () => {
     await ctx.prisma.householdInvite.updateMany({ data: { expiresAt: new Date(Date.now() - 1000) } });
     expect((await ctx.call(guest, 'POST', `/api/invites/${token}/accept`)).status).toBe(410);
     expect((await ctx.call(guest, 'POST', '/api/invites/nope/accept')).status).toBe(410);
+  });
+
+  it('concurrent accepts by two different non-members cannot both succeed (single-use race)', async () => {
+    const owner = await ctx.user(); const g1 = await ctx.user(); const g2 = await ctx.user();
+    const hid = await ctx.household(owner);
+    const token = tokenOf((await ctx.call(owner, 'POST', `/api/households/${hid}/invites`)).body.data.url);
+
+    // A plain concurrent-HTTP-call version of this test does not reliably
+    // race against the local test database (both requests tend to complete
+    // one fully before the other's first query is even issued). Force
+    // genuine interleaving instead, the same way households.test.ts's
+    // TOCTOU probe does: delay the *first* householdInvite.findUnique()
+    // call system-wide so the second call has a real chance to also reach
+    // its own read (both observing acceptedBy: null) before the first
+    // transaction commits.
+    let delayed = false;
+    const probe = ctx.prisma.$extends({
+      query: {
+        householdInvite: {
+          async findUnique({ args, query }) {
+            const result = await query(args);
+            if (!delayed) { delayed = true; await new Promise((r) => setTimeout(r, 30)); }
+            return result;
+          },
+        },
+      },
+    }) as unknown as PrismaClient;
+
+    const [r1, r2] = await Promise.allSettled([
+      acceptInvite(probe, token, g1.sub),
+      acceptInvite(probe, token, g2.sub),
+    ]);
+
+    const results = [r1, r2];
+    const fulfilled = results.filter((r) => r.status === 'fulfilled');
+    const rejected = results.filter((r) => r.status === 'rejected');
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+
+    const memberCount = await ctx.prisma.householdMember.count({ where: { householdId: hid } });
+    expect(memberCount).toBe(2);
   });
 });
