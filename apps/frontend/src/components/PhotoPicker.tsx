@@ -33,13 +33,22 @@ export function PhotoPicker({ hid, item }: { hid: string; item: ItemDto }) {
     finally { busyRef.current = false; setBusy(false); if (input.current) input.current.value = ''; }
   };
 
+  const onRemove = async () => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setBusy(true);
+    try { await remove({ hid, id: item.id }).unwrap(); }
+    catch (err) { toast.show({ message: errorMessage(err) }); }
+    finally { busyRef.current = false; setBusy(false); }
+  };
+
   return (
     <div className="flex flex-col items-center gap-1">
       <button type="button" disabled={busy} onClick={() => input.current?.click()} aria-label={item.imageUrl ? 'Change photo' : 'Add photo'}
         className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-xl border border-dashed border-slate-300 bg-slate-100 text-sm text-slate-500">
         {busy ? '…' : item.imageUrl ? <img src={item.imageUrl} alt={item.name} className="h-full w-full object-cover" /> : '+ Photo'}
       </button>
-      {item.imageUrl && !busy && <button type="button" className="text-xs text-slate-500 underline" onClick={() => remove({ hid, id: item.id })}>Remove</button>}
+      {item.imageUrl && !busy && <button type="button" className="text-xs text-slate-500 underline" onClick={() => void onRemove()}>Remove</button>}
       <input ref={input} type="file" accept="image/*" capture="environment" hidden onChange={(e) => void onFile(e.target.files?.[0])} />
     </div>
   );

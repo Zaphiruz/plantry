@@ -11,8 +11,20 @@ export function Scanner({ open, onDetected, onClose }: { open: boolean; onDetect
 
   useEffect(() => {
     if (!open) return;
-    let stopped = false; let stream: MediaStream | undefined; let raf = 0; let zxingStop: (() => void) | undefined;
+    let stopped = false; let stream: MediaStream | undefined; let raf = 0; let zxingStop: (() => void) | undefined; let torndown = false;
     const done = (code: string) => { if (!stopped) { stopped = true; onDetected(code); } };
+    // Stops every open resource (camera track, rAF loop, zxing controls) regardless of which exit path
+    // triggered it (detected, cancel/unmount cleanup, or an error caught after getUserMedia resolved).
+    // Idempotent: safe to call from both the catch block and the effect cleanup.
+    const teardown = () => {
+      if (torndown) return;
+      torndown = true;
+      stopped = true;
+      cancelAnimationFrame(raf);
+      zxingStop?.();
+      stream?.getTracks().forEach((t) => t.stop());
+      if (video.current) video.current.srcObject = null;
+    };
 
     (async () => {
       try {
@@ -35,10 +47,13 @@ export function Scanner({ open, onDetected, onClose }: { open: boolean; onDetect
           zxingStop = () => controls.stop();
           if (stopped) zxingStop();
         }
-      } catch { setError('Camera unavailable — check the site permission, or type the barcode on the item form.'); }
+      } catch {
+        teardown();
+        setError('Camera unavailable — check the site permission, or type the barcode on the item form.');
+      }
     })();
 
-    return () => { stopped = true; cancelAnimationFrame(raf); zxingStop?.(); stream?.getTracks().forEach((t) => t.stop()); };
+    return teardown;
   }, [open, onDetected]);
 
   return (
