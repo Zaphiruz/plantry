@@ -20,30 +20,49 @@ export async function currentSubscription(): Promise<PushSubscription | null> {
   return (await reg?.pushManager.getSubscription()) ?? null;
 }
 
+/** Byte-for-byte comparison of an existing subscription's key against the key we'd subscribe with now. */
+export function sameKey(a: ArrayBuffer | null, b: Uint8Array): boolean {
+  if (!a) return false;
+  const av = new Uint8Array(a);
+  if (av.length !== b.length) return false;
+  for (let i = 0; i < av.length; i++) if (av[i] !== b[i]) return false;
+  return true;
+}
+
 export async function subscribePush(vapidPublicKey: string): Promise<PushSubscriptionJSON> {
   if ((await Notification.requestPermission()) !== 'granted') throw new Error('Notifications are blocked for this site');
   const reg = await navigator.serviceWorker.ready;
+  const keyBytes = urlBase64ToUint8Array(vapidPublicKey);
   // TS's lib.dom types the Uint8Array's `.buffer` as ArrayBufferLike (which admits SharedArrayBuffer),
   // not the plain ArrayBuffer that PushSubscriptionOptionsInit demands; a same-shape BufferSource cast
   // is the standard workaround (the runtime value is a plain Uint8Array either way).
-  const applicationServerKey = urlBase64ToUint8Array(vapidPublicKey) as BufferSource;
-  let sub = await reg.pushManager.getSubscription();
-  if (!sub) {
-    try {
-      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey });
-    } catch (err) {
-      // A subscription created under a previously-rotated VAPID key makes subscribe() throw
-      // InvalidStateError; drop it and retry once under the current key.
-      if (err instanceof DOMException && err.name === 'InvalidStateError') {
-        const stale = await reg.pushManager.getSubscription();
-        await stale?.unsubscribe();
-        sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey });
-      } else {
-        throw err;
-      }
-    }
+  const applicationServerKey = keyBytes as BufferSource;
+
+  const existing = await reg.pushManager.getSubscription();
+  if (existing) {
+    // Reuse only if it was created under the SAME key. A subscription made under a rotated VAPID
+    // key must never be returned as-is: it would be POSTed to the server as a valid subscription
+    // for the wrong key pair, and pushManager.subscribe() also refuses to hand out a second
+    // subscription while one already exists, so it must be dropped before subscribing again.
+    if (sameKey(existing.options.applicationServerKey, keyBytes)) return existing.toJSON();
+    await existing.unsubscribe();
   }
-  return sub.toJSON();
+
+  try {
+    const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey });
+    return sub.toJSON();
+  } catch (err) {
+    // Belt-and-braces: some browsers still throw InvalidStateError here (e.g. a subscription
+    // reappeared between the unsubscribe above and this call). Drop whatever is there now and
+    // retry exactly once.
+    if (err instanceof DOMException && err.name === 'InvalidStateError') {
+      const stale = await reg.pushManager.getSubscription();
+      await stale?.unsubscribe();
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey });
+      return sub.toJSON();
+    }
+    throw err;
+  }
 }
 
 export async function unsubscribePush(): Promise<string | null> {

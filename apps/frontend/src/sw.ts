@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 import { precacheAndRoute, createHandlerBoundToURL } from 'workbox-precaching';
 import { NavigationRoute, registerRoute } from 'workbox-routing';
+import { parsePushPayload } from './lib/pushPayload';
 
 declare let self: ServiceWorkerGlobalScope;
 precacheAndRoute(self.__WB_MANIFEST);
@@ -8,10 +9,11 @@ registerRoute(new NavigationRoute(createHandlerBoundToURL('/index.html'), { deny
 self.addEventListener('install', () => { void self.skipWaiting(); });
 self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
 
-interface PushPayload { title: string; body: string; url: string }
-
 self.addEventListener('push', (event) => {
-  const p: PushPayload = event.data ? event.data.json() : { title: 'Plantry', body: '', url: '/' };
+  // event.data.json() throws synchronously on a non-JSON payload, which would skip waitUntil
+  // entirely and show no notification (penalised by browsers as a "silent push"). Read the raw
+  // text and parse it defensively instead so a notification is always shown.
+  const p = parsePushPayload(event.data ? event.data.text() : null);
   event.waitUntil(self.registration.showNotification(p.title, { body: p.body, icon: '/favicon.svg', badge: '/favicon.svg', tag: p.url, data: { url: p.url } }));
 });
 
