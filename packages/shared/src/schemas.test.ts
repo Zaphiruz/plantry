@@ -1,0 +1,64 @@
+import { describe, expect, it } from 'vitest';
+import {
+  RATE_WINDOWS, windowDays, rateWindowSchema, restockSchema, consumeSchema,
+  itemCreateSchema, itemUpdateSchema, shoppingAddSchema, photoUploadSchema,
+} from './index.js';
+
+describe('rate windows', () => {
+  it('is the fixed enum', () => {
+    expect(RATE_WINDOWS).toEqual(['30d', '60d', '90d', '183d', '365d']);
+    expect(windowDays('183d')).toBe(183);
+  });
+  it('rejects anything else', () => {
+    expect(rateWindowSchema.safeParse('7d').success).toBe(false);
+    expect(rateWindowSchema.safeParse('90d').success).toBe(true);
+  });
+});
+
+describe('quantities', () => {
+  it('rejects zero, negatives and >3 decimals', () => {
+    expect(restockSchema.safeParse({ quantity: 0 }).success).toBe(false);
+    expect(restockSchema.safeParse({ quantity: -1 }).success).toBe(false);
+    expect(restockSchema.safeParse({ quantity: 1.2345 }).success).toBe(false);
+    expect(restockSchema.safeParse({ quantity: 1.234 }).success).toBe(true);
+  });
+  it('consume defaults to 1', () => {
+    expect(consumeSchema.parse({}).quantity).toBe(1);
+  });
+});
+
+describe('items', () => {
+  const unitId = '7b0f7a3c-8a53-4bd1-9d0e-3f0a3d1f6a11';
+  it('applies create defaults', () => {
+    const v = itemCreateSchema.parse({ name: ' Cat food ', unitId });
+    expect(v).toMatchObject({
+      name: 'Cat food', renotifyAfterDays: 7, defaultRestockQty: 1,
+      autoDeductPeriodDays: 1, autoDeductPaused: false, currentCount: 0, minStock: 0,
+    });
+  });
+  it('update applies NO defaults', () => {
+    expect(itemUpdateSchema.parse({ name: 'x' })).toEqual({ name: 'x' });
+  });
+  it('update rejects currentCount (use adjust)', () => {
+    expect(itemUpdateSchema.safeParse({ currentCount: 5 }).success).toBe(false);
+  });
+});
+
+describe('shopping add', () => {
+  it('accepts item-linked or free-text, not both', () => {
+    const itemId = '7b0f7a3c-8a53-4bd1-9d0e-3f0a3d1f6a11';
+    expect(shoppingAddSchema.safeParse({ itemId }).success).toBe(true);
+    expect(shoppingAddSchema.safeParse({ name: 'candles' }).success).toBe(true);
+    expect(shoppingAddSchema.safeParse({ itemId, name: 'x' }).success).toBe(false);
+    expect(shoppingAddSchema.safeParse({}).success).toBe(false);
+  });
+});
+
+describe('photo upload', () => {
+  it('enforces jpeg and size caps', () => {
+    const ok = { mimeType: 'image/jpeg', sizeBytes: 5 * 1024 * 1024, thumbSizeBytes: 200 * 1024 };
+    expect(photoUploadSchema.safeParse(ok).success).toBe(true);
+    expect(photoUploadSchema.safeParse({ ...ok, mimeType: 'image/png' }).success).toBe(false);
+    expect(photoUploadSchema.safeParse({ ...ok, sizeBytes: ok.sizeBytes + 1 }).success).toBe(false);
+  });
+});

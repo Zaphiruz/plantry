@@ -1,0 +1,17 @@
+{
+  "name": "plantry",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.33.2",
+  "scripts": {
+    "dev": "pnpm -r --parallel --filter=./apps/* dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "prisma:migrate": "pnpm --filter @plantry/backend prisma migrate dev",
+    "prisma:generate": "pnpm --filter @plantry/backend prisma generate"
+  },
+  "devDependencies": { "prettier": "^3.3.3", "typescript": "^5.6.3" },
+  "engines": { "node": ">=20.10.0" },
+  "pnpm": { "onlyBuiltDependencies": ["@prisma/client", "@prisma/engines", "prisma", "esbuild"] }
+}

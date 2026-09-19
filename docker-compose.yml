@@ -1,0 +1,30 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: plantry
+      POSTGRES_PASSWORD: plantry
+      POSTGRES_DB: plantry
+    ports: ["5434:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: plantry
+      MINIO_ROOT_PASSWORD: plantry-secret
+    ports: ["9100:9000", "9101:9001"]
+    volumes: [minio-data:/data]
+  minio-setup:
+    image: minio/mc:latest
+    depends_on: [minio]
+    entrypoint: >
+      /bin/sh -c "
+      sleep 3;
+      mc alias set local http://minio:9000 plantry plantry-secret;
+      mc mb --ignore-existing local/plantry-media;
+      exit 0;
+      "
+volumes:
+  pgdata:
+  minio-data:
