@@ -1,10 +1,18 @@
-import type { MemberRole, PrismaClient } from '@prisma/client';
+import type { MemberRole, Prisma, PrismaClient } from '@prisma/client';
 import { AppError, notFound } from '../errors.js';
 
 const lastOwner = () => new AppError(409, 'last_owner', 'Assign another owner first');
 
+// Serializes concurrent membership mutations on the same household so the
+// "at least one owner" invariant can't be violated by a TOCTOU race between
+// two transactions that each read the owner count before either commits.
+async function lockHousehold(tx: Prisma.TransactionClient, hid: string): Promise<void> {
+  await tx.$queryRaw`SELECT id FROM households WHERE id = ${hid}::uuid FOR UPDATE`;
+}
+
 export async function leaveHousehold(prisma: PrismaClient, hid: string, sub: string) {
   return prisma.$transaction(async (tx) => {
+    await lockHousehold(tx, hid);
     const members = await tx.householdMember.findMany({ where: { householdId: hid } });
     const me = members.find((m) => m.userSub === sub);
     if (!me) throw notFound();
@@ -21,6 +29,7 @@ export async function leaveHousehold(prisma: PrismaClient, hid: string, sub: str
 
 export async function removeMember(prisma: PrismaClient, hid: string, targetSub: string): Promise<void> {
   await prisma.$transaction(async (tx) => {
+    await lockHousehold(tx, hid);
     const members = await tx.householdMember.findMany({ where: { householdId: hid } });
     const target = members.find((m) => m.userSub === targetSub);
     if (!target) throw notFound();
@@ -31,6 +40,7 @@ export async function removeMember(prisma: PrismaClient, hid: string, targetSub:
 
 export async function setRole(prisma: PrismaClient, hid: string, targetSub: string, role: MemberRole): Promise<void> {
   await prisma.$transaction(async (tx) => {
+    await lockHousehold(tx, hid);
     const members = await tx.householdMember.findMany({ where: { householdId: hid } });
     const target = members.find((m) => m.userSub === targetSub);
     if (!target) throw notFound();

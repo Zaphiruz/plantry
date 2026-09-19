@@ -1,6 +1,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import type { PrismaClient } from '@prisma/client';
 import { createTestApp, type TestCtx } from '../test/helpers/test-app.js';
 import { resetDatabase } from '../test/helpers/db.js';
+import { AppError } from '../errors.js';
+import { setRole } from './service.js';
 
 let ctx: TestCtx;
 beforeAll(async () => { ctx = await createTestApp(); });
@@ -61,5 +64,47 @@ describe('households', () => {
     const hid = await ctx.household(owner);
     expect((await ctx.call(owner, 'DELETE', `/api/households/${hid}/members/me`)).status).toBe(204);
     expect(await ctx.prisma.household.findUnique({ where: { id: hid } })).toBeNull();
+  });
+
+  it('concurrent demotes of two co-owners cannot both succeed (TOCTOU probe)', async () => {
+    const a = await ctx.user(); const b = await ctx.user();
+    const hid = await ctx.household(a);
+    await ctx.addMember(hid, b, 'owner');
+
+    // Force genuine interleaving of the two concurrent transactions' reads:
+    // delay the *first* householdMember.findMany() call system-wide by a
+    // few ms so the second transaction has a real chance to also reach its
+    // read (or block on the row lock) before the first commits. Without
+    // this, both transactions run so fast against localhost Postgres that
+    // one fully completes before the other's first query is even issued,
+    // masking the race regardless of whether the lock is present.
+    let delayed = false;
+    const probe = ctx.prisma.$extends({
+      query: {
+        householdMember: {
+          async findMany({ args, query }) {
+            const result = await query(args);
+            if (!delayed) { delayed = true; await new Promise((r) => setTimeout(r, 30)); }
+            return result;
+          },
+        },
+      },
+    }) as unknown as PrismaClient;
+
+    const [r1, r2] = await Promise.allSettled([
+      setRole(probe, hid, b.sub, 'member'),
+      setRole(probe, hid, a.sub, 'member'),
+    ]);
+
+    const results = [r1, r2];
+    const fulfilled = results.filter((r) => r.status === 'fulfilled');
+    const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+    expect(fulfilled).toHaveLength(1);
+    expect(rejected).toHaveLength(1);
+    expect(rejected[0]!.reason).toBeInstanceOf(AppError);
+    expect((rejected[0]!.reason as AppError).code).toBe('last_owner');
+
+    const owners = await ctx.prisma.householdMember.count({ where: { householdId: hid, role: 'owner' } });
+    expect(owners).toBe(1);
   });
 });
