@@ -22,7 +22,7 @@ test('create household → item → consume to low → buy from shopping list �
   await expect(page.getByText(/History/)).toBeVisible();
 
   await page.getByRole('link', { name: 'Inventory' }).click();
-  await page.getByRole('button', { name: 'Use 1 Cat food' }).click();
+  await page.getByRole('button', { name: 'Use 1 ea Cat food' }).click();
   await expect(page.getByText('2 ea · low')).toBeVisible(); // global "each" has abbreviation "ea"
 
   await page.getByRole('link', { name: /Shopping/ }).click();
