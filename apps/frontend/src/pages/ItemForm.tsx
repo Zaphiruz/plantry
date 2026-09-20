@@ -60,11 +60,13 @@ export function ItemForm() {
   const validate = (): string | null => {
     if (!f.name.trim()) return 'Name is required';
     if (!f.unitId) return 'Unit is required';
+    if (f.minStock.trim() === '') return 'Minimum to keep is required';
     const minStock = Number(f.minStock);
     if (!isNonNegQty(minStock)) return 'Minimum to keep must be 0 or more, with at most 3 decimal places';
     const defaultRestockQty = Number(f.defaultRestockQty);
     if (!isPositiveQty(defaultRestockQty)) return 'Usually buy must be a positive number with at most 3 decimal places';
     if (!editing) {
+      if (f.currentCount.trim() === '') return 'Have now is required';
       const currentCount = Number(f.currentCount);
       if (!Number.isFinite(currentCount) || !threeDp(currentCount)) return 'Have now must be a number with at most 3 decimal places';
     }

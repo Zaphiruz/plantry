@@ -25,6 +25,16 @@ test('create household → item → consume to low → buy from shopping list �
   await page.getByRole('button', { name: 'Use 1 ea Cat food' }).click();
   await expect(page.getByText('2 ea · low')).toBeVisible(); // global "each" has abbreviation "ea"
 
+  // Extra assertion (c): step is a guide, not a constraint. "each" has step 1, but the "Correct
+  // count" dialog still accepts a typed off-step value (2.5) — verified via the item detail
+  // page's dialog rather than the inventory row's long-press (simpler to drive reliably here).
+  await page.getByRole('link', { name: 'Cat food' }).click();
+  await page.getByRole('button', { name: 'Correct count' }).click();
+  await page.getByLabel('Quantity').fill('1.5');
+  await page.getByRole('button', { name: 'OK' }).click();
+  await expect(page.getByText('1.5 ea · keep at least 2 ea')).toBeVisible(); // still low, so it stays on the shopping list below
+  await page.getByRole('link', { name: 'Inventory' }).click();
+
   await page.getByRole('link', { name: /Shopping/ }).click();
   await page.getByRole('button', { name: /Got Cat food/ }).click();
   await expect(page.getByText('All stocked up.')).toBeVisible();

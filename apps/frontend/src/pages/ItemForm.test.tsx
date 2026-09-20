@@ -116,6 +116,40 @@ describe('ItemForm manual validation', () => {
     expect(fetchMock.mock.calls.some((c) => url(c[0]).includes('/items') && (c[0] as Request).method === 'POST')).toBe(false);
   });
 
+  it('rejects an emptied "Minimum to keep" instead of silently coercing it to 0', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const u = url(input);
+      if (u.includes('/units')) return json(units);
+      if (u.includes('/stores')) return json([]);
+      return json(null);
+    });
+    renderForm('/h/h1/items/new', '/h/:hid/items/new', fetchMock);
+    await userEvent.type(await screen.findByLabelText('Name'), 'Cat food');
+    const min = await screen.findByLabelText('Minimum to keep');
+    await userEvent.clear(min);
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Minimum to keep/);
+    expect(fetchMock.mock.calls.some((c) => url(c[0]).includes('/items') && (c[0] as Request).method === 'POST')).toBe(false);
+  });
+
+  it('rejects an emptied "Have now" on a new item instead of silently coercing it to 0', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const u = url(input);
+      if (u.includes('/units')) return json(units);
+      if (u.includes('/stores')) return json([]);
+      return json(null);
+    });
+    renderForm('/h/h1/items/new', '/h/:hid/items/new', fetchMock);
+    await userEvent.type(await screen.findByLabelText('Name'), 'Cat food');
+    const have = await screen.findByLabelText('Have now');
+    await userEvent.clear(have);
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Have now/);
+    expect(fetchMock.mock.calls.some((c) => url(c[0]).includes('/items') && (c[0] as Request).method === 'POST')).toBe(false);
+  });
+
   it('accepts a valid off-step "Usually buy" value (mirrors the server: any positive value with <=3dp)', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const u = url(input);
