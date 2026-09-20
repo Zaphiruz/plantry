@@ -23,6 +23,12 @@ describe('config', () => {
   it('throws on missing required vars', () => {
     expect(() => loadConfig({ ...base, SESSION_SECRET: '' })).toThrow(/SESSION_SECRET/);
   });
+  it('defaults TRUST_PROXY_HOPS to 0 and validates it', () => {
+    expect(loadConfig(base).trustProxyHops).toBe(0);
+    expect(loadConfig({ ...base, TRUST_PROXY_HOPS: '2' }).trustProxyHops).toBe(2);
+    expect(() => loadConfig({ ...base, TRUST_PROXY_HOPS: 'yes' })).toThrow(/TRUST_PROXY_HOPS/);
+    expect(() => loadConfig({ ...base, TRUST_PROXY_HOPS: '-1' })).toThrow(/TRUST_PROXY_HOPS/);
+  });
   it('refuses the dev bypass in production', () => {
     expect(() => loadConfig({ ...base, NODE_ENV: 'production', AUTH_DEV_BYPASS: '1' })).toThrow(/AUTH_DEV_BYPASS/);
     expect(loadConfig({ ...base, AUTH_DEV_BYPASS: '1' }).devBypass).toBe(true);

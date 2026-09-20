@@ -1,4 +1,5 @@
-import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
+import { createHash } from 'node:crypto';
+import Fastify, { type FastifyError, type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
 import type { PrismaClient } from '@prisma/client';
@@ -25,7 +26,7 @@ declare module 'fastify' {
 }
 
 export interface BuildAppOptions {
-  logger?: boolean;
+  logger?: FastifyServerOptions['logger'];
   prisma: PrismaClient;
   frontendOrigin: string;
   sessionSecret: string;
@@ -35,6 +36,9 @@ export interface BuildAppOptions {
   sessionTtlSeconds?: number;
   devBypass?: boolean;
   disableRateLimit?: boolean;
+  /** Number of proxy hops to trust for `req.ip`/`X-Forwarded-For`. 0 (default) trusts none. */
+  trustProxyHops?: number;
+  rateLimitMax?: number;
   push?: PushService;
   storage?: Storage;
   github?: GithubClient;
@@ -43,7 +47,16 @@ export interface BuildAppOptions {
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 export async function buildApp(options: BuildAppOptions): Promise<FastifyInstance> {
-  const app = Fastify({ logger: options.logger ?? false, trustProxy: true });
+  // Trust exactly `trustProxyHops` hops in front of us when resolving `req.ip`.
+  // 0 (the default, used by tests and dev) trusts nothing, so a client-supplied
+  // X-Forwarded-For can never influence `req.ip`. NOTE: Fastify's own numeric
+  // `trustProxy` is a documented no-op (fails closed), so we pass the hop-count
+  // predicate that proxy-addr actually honours.
+  const trustProxyHops = options.trustProxyHops ?? 0;
+  const app = Fastify({
+    logger: options.logger ?? false,
+    trustProxy: (_addr: string, hop: number) => hop < trustProxyHops,
+  });
   const deps: Deps = {
     prisma: options.prisma, frontendOrigin: options.frontendOrigin,
     ...(options.push ? { push: options.push } : {}),
@@ -60,10 +73,22 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
 
   await app.register(cookie, { secret: options.sessionSecret });
 
-  if (!options.disableRateLimit) {
-    await app.register(rateLimit, { global: true, max: 600, timeWindow: '1 minute', allowList: (req) => req.url === '/health' });
-  }
   const cookieName = 'plantry_sid';
+
+  if (!options.disableRateLimit) {
+    await app.register(rateLimit, {
+      global: true,
+      max: options.rateLimitMax ?? 600,
+      timeWindow: '1 minute',
+      allowList: (req) => req.url === '/health' || req.url === '/api/ready',
+      // Bucket by session (unspoofable) when the caller has one, else by the peer address.
+      // `req.ip` only reflects X-Forwarded-For when trustProxyHops > 0.
+      keyGenerator: (req) => {
+        const sid = req.cookies?.[cookieName];
+        return sid ? `sid:${createHash('sha256').update(sid).digest('hex')}` : `ip:${req.ip}`;
+      },
+    });
+  }
   const ttlSeconds = options.sessionTtlSeconds ?? 7 * 24 * 60 * 60;
   const adminGroup = options.adminGroup ?? 'plantry-admins';
   const sessionStore = createSessionStore(options.prisma, ttlSeconds);
@@ -94,7 +119,19 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     reply.code(404).send({ error: { code: 'not_found', message: 'Not found' } }),
   );
 
+  // Cheap liveness: the process is up and serving.
   app.get('/health', async () => ({ status: 'ok' }));
+
+  // Readiness: the process can actually reach its database.
+  app.get('/api/ready', async (req, reply) => {
+    try {
+      await options.prisma.$queryRaw`SELECT 1`;
+      return { status: 'ok' };
+    } catch (err) {
+      req.log.error({ err }, 'readiness probe failed');
+      return reply.code(503).send({ status: 'degraded' });
+    }
+  });
 
   const authDeps: AuthRouteDeps = {
     prisma: options.prisma, sessionStore, oidcClient: options.oidcClient, cookieName,

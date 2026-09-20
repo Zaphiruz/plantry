@@ -72,14 +72,24 @@ vault kv put secret/plantry \
   AUTHENTIK_ISSUER_URL='https://authentik.wispy-nook.casa/application/o/plantry/' \
   AUTHENTIK_CLIENT_ID='<id>' AUTHENTIK_CLIENT_SECRET='<secret>' \
   AUTHENTIK_REDIRECT_URI='https://plantry.wispy-nook.casa/api/auth/callback' \
-  AUTHENTIK_ADMIN_GROUP='plantry-admins' \
+  AUTHENTIK_ADMIN_GROUP='plantry-admins' TRUST_PROXY_HOPS='2' \
   VAPID_PUBLIC_KEY='<pub>' VAPID_PRIVATE_KEY='<priv>' VAPID_SUBJECT='mailto:<you>' \
   S3_ENDPOINT='http://192.168.40.20:9002' S3_PUBLIC_ENDPOINT='https://<confirmed in step 10>' \
   S3_REGION='us-east-1' S3_BUCKET='plantry-media' S3_ACCESS_KEY='<svcacct>' S3_SECRET_KEY='<svcacct secret>' \
   GITHUB_FEEDBACK_TOKEN='<pat>' GITHUB_FEEDBACK_REPO='<owner>/plantry'
 bash /opt/vault/add-app-token.sh plantry plantry     # prints the periodic token; auto-registered for weekly renewal
 ```
-Never put `AUTH_DEV_BYPASS` in Vault (the backend refuses to boot with it in production anyway).
+Never put `AUTH_DEV_BYPASS` in Vault. The entrypoint ignores it (and `NODE_ENV`, `NODE_OPTIONS`,
+`NODE_EXTRA_CA_CERTS`, `TZ`, `PATH`) if present, logging the ignored key names; the backend also
+refuses to boot with the bypass in production.
+
+`TRUST_PROXY_HOPS='2'` is the **hop count**, not a toggle. Requests reach the backend as
+`client → nginx (edge) → Caddy (frontend container) → backend`, and each proxy *appends* to
+`X-Forwarded-For`, so the address chain the backend sees is `[Caddy, nginx, client]`. Trusting
+2 hops (Caddy and nginx) makes `req.ip` the real client address; trusting more would let a
+client prepend a fake address and get a fresh rate-limit bucket per request. If the proxy
+chain in front of Plantry changes, change this number to match — set it to `0` to fall back to
+the peer address.
 
 - [ ] **Step 14: S2 checkout, runner, token**
 

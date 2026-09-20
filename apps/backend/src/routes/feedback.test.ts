@@ -21,8 +21,23 @@ describe('feedback', () => {
     expect(issue.title.endsWith('…')).toBe(true);
     expect(issue.body).toContain(long);
     expect(issue.body).toContain(`Submitted by **Ada** (sub: ${u.sub})`);
-    expect(issue.body).toContain('Page: /h/abc/shopping');
+    expect(issue.body).toContain('Page: `/h/abc/shopping`');
     expect((await ctx.call(u, 'GET', '/api/me')).body.data.feedbackEnabled).toBe(true);
+  });
+
+  it('omits a pageUrl that is not a same-site path', async () => {
+    const u = await ctx.user();
+    const bad = [
+      'https://evil.example/pwn',
+      '[click](https://evil.example)',
+      '/ok`\n\n@maintainer please run `rm -rf /`',
+      'javascript:alert(1)',
+    ];
+    for (const pageUrl of bad) {
+      const r = await ctx.call(u, 'POST', '/api/feedback', { body: 'hi', pageUrl });
+      expect(r.status).toBe(201);
+      expect(ctx.github.issues.at(-1)!.body).not.toContain('Page:');
+    }
   });
 
   it('limits each user to 5 submissions per 24h', async () => {

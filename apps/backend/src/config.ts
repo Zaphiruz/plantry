@@ -4,12 +4,24 @@ import type { S3Config } from './services/storage.js';
 export interface AppConfig {
   port: number; nodeEnv: string; databaseUrl: string; frontendOrigin: string;
   sessionSecret: string; cookieSecure: boolean; adminGroup: string; devBypass: boolean;
+  trustProxyHops: number;
   oidc: { issuer: string; clientId: string; clientSecret: string; redirectUri: string };
   vapid: PushConfig | null;
   s3: S3Config | null;
   github: { token: string; owner: string; repo: string } | null;
 }
 type Env = Record<string, string | undefined>;
+
+/**
+ * How many reverse-proxy hops in front of this process may set X-Forwarded-For.
+ * Defaults to 0 (trust nothing) so a misconfigured deployment fails closed.
+ */
+function trustProxyHops(raw: string | undefined): number {
+  if (raw === undefined || raw === '') return 0;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 0) throw new Error('TRUST_PROXY_HOPS must be a non-negative integer');
+  return n;
+}
 
 export function loadConfig(env: Env = process.env): AppConfig {
   const required = (name: string): string => {
@@ -39,6 +51,7 @@ export function loadConfig(env: Env = process.env): AppConfig {
     cookieSecure: (env['SESSION_COOKIE_SECURE'] ?? (nodeEnv === 'production' ? 'true' : 'false')) === 'true',
     adminGroup: env['AUTHENTIK_ADMIN_GROUP'] ?? 'plantry-admins',
     devBypass,
+    trustProxyHops: trustProxyHops(env['TRUST_PROXY_HOPS']),
     oidc: {
       issuer: required('AUTHENTIK_ISSUER_URL'), clientId: required('AUTHENTIK_CLIENT_ID'),
       clientSecret: required('AUTHENTIK_CLIENT_SECRET'), redirectUri: required('AUTHENTIK_REDIRECT_URI'),

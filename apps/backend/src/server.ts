@@ -2,6 +2,7 @@ import { PrismaClient } from '@prisma/client';
 import { buildApp } from './app.js';
 import { createOidcClient } from './auth/oidc.js';
 import { loadConfig } from './config.js';
+import { loggerOptions } from './logging.js';
 import { startDailySchedule } from './jobs/daily.js';
 import { createPushService } from './services/push.js';
 import { createS3Storage } from './services/storage.js';
@@ -16,7 +17,8 @@ const push = config.vapid
 const github = config.github ? createGithubClient(config.github) : undefined;
 
 const app = await buildApp({
-  logger: true,
+  logger: loggerOptions,
+  trustProxyHops: config.trustProxyHops,
   prisma,
   frontendOrigin: config.frontendOrigin,
   sessionSecret: config.sessionSecret,

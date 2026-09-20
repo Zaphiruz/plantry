@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { filterSecrets } from './env-filter.mjs';
 
 const { VAULT_ADDR, VAULT_TOKEN } = process.env;
 if (!VAULT_ADDR || !VAULT_TOKEN) {
@@ -12,7 +13,11 @@ if (!res.ok) {
   process.exit(1);
 }
 const { data: { data: secrets } } = await res.json();
-Object.assign(process.env, secrets);
+const { applied, ignored } = filterSecrets(secrets);
+if (ignored.length) {
+  console.warn(`[entrypoint] Ignored protected key(s) from Vault: ${ignored.join(', ')}`);
+}
+Object.assign(process.env, applied);
 console.log('[entrypoint] Secrets loaded, starting server...');
 
 const child = spawn(process.execPath, ['apps/backend/dist/server.js'], { stdio: 'inherit', env: process.env });

@@ -8,6 +8,8 @@ import type { GithubClient } from '../services/github.js';
 const DAILY_LIMIT = 5;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const RECHECK_MS = 60 * 60 * 1000;
+/** A same-site path. Anything else (absolute URLs, markdown, backticks, newlines) is dropped. */
+const SAFE_PAGE_URL = /^\/[\w\-./:%?=&#]*$/;
 
 function toDto(r: FeedbackSubmission): FeedbackDto {
   const status = r.state !== 'closed' ? 'open' : r.stateReason === 'completed' ? 'done' : 'closed';
@@ -29,9 +31,10 @@ export function registerFeedbackRoutes(app: FastifyInstance, deps: Deps & { gith
     if (recent >= DAILY_LIMIT) throw new AppError(429, 'rate_limited', 'Too many submissions — try again tomorrow');
 
     const title = b.body.length > 60 ? `${b.body.slice(0, 57)}…` : b.body;
+    const page = b.pageUrl && SAFE_PAGE_URL.test(b.pageUrl) ? [`Page: \`${b.pageUrl}\``] : [];
     const issue = await deps.github.createIssue({
       title,
-      body: [b.body, '', '---', `Submitted by **${user.name}** (sub: ${user.sub})`, ...(b.pageUrl ? [`Page: ${b.pageUrl}`] : [])].join('\n'),
+      body: [b.body, '', '---', `Submitted by **${user.name}** (sub: ${user.sub})`, ...page].join('\n'),
       labels: ['feedback', 'user-submitted'],
     });
     const row = await deps.prisma.feedbackSubmission.create({
