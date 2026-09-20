@@ -115,6 +115,7 @@ model Unit {
   name         String
   pluralName   String?    @map("plural_name")
   abbreviation String?
+  step         Decimal    @default(1) @db.Decimal(12, 3)
   householdId  String?    @map("household_id") @db.Uuid
   household    Household? @relation(fields: [householdId], references: [id], onDelete: Cascade)
   items        Item[]

@@ -7,7 +7,7 @@ export interface MeDto { user: UserDto; households: HouseholdSummary[]; photosEn
 export interface MemberDto { sub: string; name: string; email: string; role: MemberRole; joinedAt: string }
 export interface InviteDto { url: string; expiresAt: string }
 export interface StoreDto { id: string; name: string; notes: string | null }
-export interface UnitDto { id: string; name: string; pluralName: string | null; abbreviation: string | null; global: boolean }
+export interface UnitDto { id: string; name: string; pluralName: string | null; abbreviation: string | null; global: boolean; step: number }
 
 export interface ItemDto {
   id: string; name: string; description: string | null; category: string | null;

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   RATE_WINDOWS, windowDays, rateWindowSchema, restockSchema, consumeSchema,
   itemCreateSchema, itemUpdateSchema, shoppingAddSchema, photoUploadSchema,
+  stepSchema, unitCreateSchema, unitUpdateSchema,
 } from './index.js';
 
 describe('rate windows', () => {
@@ -22,8 +23,32 @@ describe('quantities', () => {
     expect(restockSchema.safeParse({ quantity: 1.2345 }).success).toBe(false);
     expect(restockSchema.safeParse({ quantity: 1.234 }).success).toBe(true);
   });
-  it('consume defaults to 1', () => {
-    expect(consumeSchema.parse({}).quantity).toBe(1);
+  it('consume has no default; quantity is resolved server-side', () => {
+    expect(consumeSchema.parse({}).quantity).toBeUndefined();
+  });
+});
+
+describe('unit step', () => {
+  it('accepts >= 0.01 with at most 2 decimal places', () => {
+    expect(stepSchema.safeParse(0.01).success).toBe(true);
+    expect(stepSchema.safeParse(8).success).toBe(true);
+    expect(stepSchema.safeParse(0.1).success).toBe(true);
+  });
+  it('rejects 0.001, 0, negatives and 3dp values', () => {
+    expect(stepSchema.safeParse(0.001).success).toBe(false);
+    expect(stepSchema.safeParse(0).success).toBe(false);
+    expect(stepSchema.safeParse(-1).success).toBe(false);
+    expect(stepSchema.safeParse(0.125).success).toBe(false);
+  });
+
+  it('unit create defaults step to 1', () => {
+    expect(unitCreateSchema.parse({ name: 'Can' }).step).toBe(1);
+  });
+  it('unit create accepts an explicit step', () => {
+    expect(unitCreateSchema.parse({ name: 'Case', step: 8 }).step).toBe(8);
+  });
+  it('unit update applies NO defaults', () => {
+    expect(unitUpdateSchema.parse({})).toEqual({});
   });
 });
 

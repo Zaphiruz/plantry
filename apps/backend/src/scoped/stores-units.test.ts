@@ -27,6 +27,48 @@ describe('stores', () => {
 });
 
 describe('units', () => {
+  it('migrated global units have the specified steps', async () => {
+    const steps = await ctx.prisma.unit.findMany({
+      where: { householdId: null }, select: { name: true, step: true }, orderBy: { name: 'asc' },
+    });
+    const byName = Object.fromEntries(steps.map((u) => [u.name, Number(u.step)]));
+    expect(byName.lb).toBe(0.1);
+    expect(byName.kg).toBe(0.1);
+    expect(byName.l).toBe(0.1);
+    expect(byName.gallon).toBe(0.25);
+    for (const name of ['each', 'can', 'bottle', 'box', 'bag', 'roll', 'oz', 'g', 'ml']) {
+      expect(byName[name]).toBe(1);
+    }
+  });
+
+  it('create with a custom step is returned and persisted', async () => {
+    const u = await ctx.user(); const hid = await ctx.household(u);
+    const res = await ctx.call(u, 'POST', `/api/households/${hid}/units`, { name: 'case', step: 8 });
+    expect(res.status).toBe(200);
+    expect(res.body.data.step).toBe(8);
+    const row = await ctx.prisma.unit.findUniqueOrThrow({ where: { id: res.body.data.id } });
+    expect(Number(row.step)).toBe(8);
+  });
+
+  it('create defaults step to 1 when omitted', async () => {
+    const u = await ctx.user(); const hid = await ctx.household(u);
+    const res = await ctx.call(u, 'POST', `/api/households/${hid}/units`, { name: 'sleeve' });
+    expect(res.body.data.step).toBe(1);
+  });
+
+  it('PATCH updates step', async () => {
+    const u = await ctx.user(); const hid = await ctx.household(u);
+    const id = (await ctx.call(u, 'POST', `/api/households/${hid}/units`, { name: 'sleeve' })).body.data.id;
+    const res = await ctx.call(u, 'PATCH', `/api/households/${hid}/units/${id}`, { step: 5 });
+    expect(res.body.data.step).toBe(5);
+  });
+
+  it('rejects step 0.001', async () => {
+    const u = await ctx.user(); const hid = await ctx.household(u);
+    const res = await ctx.call(u, 'POST', `/api/households/${hid}/units`, { name: 'sleeve', step: 0.001 });
+    expect(res.status).toBe(400);
+  });
+
   it('lists globals + own, never another household’s', async () => {
     const a = await ctx.user(); const b = await ctx.user();
     const ha = await ctx.household(a); const hb = await ctx.household(b);

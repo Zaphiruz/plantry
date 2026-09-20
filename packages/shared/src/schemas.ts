@@ -6,6 +6,8 @@ const MAX = 999_999_999;
 export const qtySchema = z.number().finite().positive().max(MAX).refine(threeDp, 'max 3 decimal places');
 export const countSchema = z.number().finite().min(-MAX).max(MAX).refine(threeDp, 'max 3 decimal places');
 const nonNegSchema = z.number().finite().min(0).max(MAX).refine(threeDp, 'max 3 decimal places');
+const twoDp = (n: number) => Math.abs(n * 100 - Math.round(n * 100)) < 1e-6;
+export const stepSchema = z.number().finite().min(0.01).max(1_000_000).refine(twoDp, 'max 2 decimal places');
 const nameSchema = z.string().trim().min(1).max(120);
 const noteSchema = z.string().trim().max(500).nullish();
 const uuid = z.string().uuid();
@@ -16,12 +18,17 @@ export const memberRoleSchema = z.object({ role: z.enum(['owner', 'member']) }).
 export const storeCreateSchema = z.object({ name: nameSchema, notes: noteSchema }).strict();
 export const storeUpdateSchema = storeCreateSchema.partial();
 
-export const unitCreateSchema = z.object({
+const unitFields = {
   name: z.string().trim().min(1).max(40),
   pluralName: z.string().trim().min(1).max(40).nullish(),
   abbreviation: z.string().trim().min(1).max(12).nullish(),
+  step: stepSchema,
+};
+export const unitCreateSchema = z.object({
+  ...unitFields,
+  step: unitFields.step.default(1),
 }).strict();
-export const unitUpdateSchema = unitCreateSchema.partial();
+export const unitUpdateSchema = z.object(unitFields).partial().strict();
 
 const itemFields = {
   name: nameSchema,
@@ -49,7 +56,7 @@ export const itemCreateSchema = z.object({
 export const itemUpdateSchema = z.object(itemFields).partial().strict();
 
 export const restockSchema = z.object({ quantity: qtySchema, note: noteSchema }).strict();
-export const consumeSchema = z.object({ quantity: qtySchema.default(1), note: noteSchema }).strict();
+export const consumeSchema = z.object({ quantity: qtySchema.optional(), note: noteSchema }).strict();
 export const adjustSchema = z.object({ newCount: countSchema, note: noteSchema }).strict();
 
 export const rateWindowSchema = z.enum(RATE_WINDOWS);

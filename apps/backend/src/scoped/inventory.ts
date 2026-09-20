@@ -53,8 +53,9 @@ export function registerInventoryRoutes(s: FastifyInstance, deps: Deps): void {
     const hid = req.household!.id;
     const item = await loadItem(deps, hid, req.params.itemId);
     const b = parse(consumeSchema, req.body ?? {});
+    const quantity = b.quantity ?? num(item.unit.step);
     const ev = await prisma.$transaction((tx) => applyEvent(tx, {
-      itemId: item.id, householdId: hid, eventType: 'consume', quantity: b.quantity, userSub: req.user!.sub, note: b.note,
+      itemId: item.id, householdId: hid, eventType: 'consume', quantity, userSub: req.user!.sub, note: b.note,
     }));
     return respond(hid, item.id, ev.id);
   });

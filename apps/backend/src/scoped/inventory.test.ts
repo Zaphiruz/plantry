@@ -21,6 +21,23 @@ describe('inventory routes', () => {
     expect((await ctx.call(u, 'POST', `${base}/inventory/${item.id}/restock`, { quantity: 0 })).status).toBe(400);
   });
 
+  it('consume with no quantity uses the unit step (no float drift)', async () => {
+    const u = await ctx.user(); const hid = await ctx.household(u); const base = `/api/households/${hid}`;
+    const caseUnit = (await ctx.call(u, 'POST', `${base}/units`, { name: 'case', step: 8 })).body.data;
+    const bottleStep = await ctx.call(u, 'POST', `${base}/units`, { name: 'jug', step: 0.1 });
+    const item = await ctx.item(hid, { count: 20, unitId: caseUnit.id });
+    const stepped = await ctx.item(hid, { count: 1, unitId: bottleStep.body.data.id, name: 'Water' });
+
+    expect((await ctx.call(u, 'POST', `${base}/inventory/${item.id}/consume`, {})).body.data.item.currentCount).toBe(12);
+    expect((await ctx.call(u, 'POST', `${base}/inventory/${stepped.id}/consume`, {})).body.data.item.currentCount).toBe(0.9);
+  });
+
+  it('consume with an explicit off-step quantity is accepted', async () => {
+    const u = await ctx.user(); const hid = await ctx.household(u); const base = `/api/households/${hid}`;
+    const item = await ctx.item(hid, { count: 5 });
+    expect((await ctx.call(u, 'POST', `${base}/inventory/${item.id}/consume`, { quantity: 1.5 })).body.data.item.currentCount).toBe(3.5);
+  });
+
   it('adjust to the same count writes no event', async () => {
     const u = await ctx.user(); const hid = await ctx.household(u);
     const item = await ctx.item(hid, { count: 3 });

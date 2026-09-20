@@ -4,9 +4,11 @@ import { unitCreateSchema, unitUpdateSchema, type UnitDto } from '@plantry/share
 import type { Deps } from '../deps.js';
 import { AppError, forbidden, notFound, parse } from '../errors.js';
 import { uuidParam } from '../lib/ids.js';
+import { num } from '../lib/num.js';
 
 export const toUnitDto = (u: Unit): UnitDto => ({
   id: u.id, name: u.name, pluralName: u.pluralName, abbreviation: u.abbreviation, global: u.householdId === null,
+  step: num(u.step),
 });
 
 export function registerUnitRoutes(s: FastifyInstance, deps: Deps): void {
@@ -30,7 +32,10 @@ export function registerUnitRoutes(s: FastifyInstance, deps: Deps): void {
   s.post('/units', async (req) => {
     const b = parse(unitCreateSchema, req.body);
     const row = await deps.prisma.unit.create({
-      data: { householdId: req.household!.id, name: b.name, pluralName: b.pluralName ?? null, abbreviation: b.abbreviation ?? null },
+      data: {
+        householdId: req.household!.id, name: b.name, pluralName: b.pluralName ?? null,
+        abbreviation: b.abbreviation ?? null, step: b.step,
+      },
     });
     return { data: toUnitDto(row) };
   });
@@ -44,6 +49,7 @@ export function registerUnitRoutes(s: FastifyInstance, deps: Deps): void {
         ...(b.name !== undefined ? { name: b.name } : {}),
         ...(b.pluralName !== undefined ? { pluralName: b.pluralName } : {}),
         ...(b.abbreviation !== undefined ? { abbreviation: b.abbreviation } : {}),
+        ...(b.step !== undefined ? { step: b.step } : {}),
       },
     });
     return { data: toUnitDto(row) };
