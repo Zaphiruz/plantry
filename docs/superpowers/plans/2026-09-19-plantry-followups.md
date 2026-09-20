@@ -6,17 +6,27 @@
 
 All 27 plan tasks are implemented, each with a task-scoped review. A whole-branch review (22 findings) and a scoped re-review (4 residuals) are both closed. At head: lint 0/0, typecheck clean, **184 tests** (backend against real PostgreSQL, shared, frontend) + 1 Playwright smoke, production images build and pass their smoke checks locally.
 
-**Not done — needs the owner:** plan Task 26 sections B (provision) and C (first deploy + production verification). The runbook is `OPERATIONS.md`. Nothing has touched S2, LC2, LC3, Authentik, Vault, Cloudflare, MinIO or GitHub.
+**Deployed 2026-09-20** — plan Task 26 sections B and C were carried out with the owner approving each production step; see below.
 
-## Must be settled at first deploy (cannot be verified off-box)
+## First deploy — done 2026-09-20 (all verified in production)
 
-1. ~~GitHub owner~~ — done: private repo `Zaphiruz/plantry` (`GITHUB_FEEDBACK_REPO=Zaphiruz/plantry`). CI is green there. The **Deploy workflow is disabled** until the S2 runner exists — re-enable per `OPERATIONS.md` step 16. Still to do on GitHub: create the `feedback` / `user-submitted` labels and the issues-only fine-grained PAT (step 8).
-2. **`TRUST_PROXY_HOPS=3`** in Vault (measured at first deploy: cloudflared → nginx on LC2 → Caddy, and Caddy must list LC2 under `trusted_proxies` or it discards X-Forwarded-For entirely). With the default `0`, `req.ip` is the Caddy container address, so every user shares one rate-limit bucket. If the chain ever changes, this number must change with it.
-3. **Browser `PATCH` through the Cloudflare Tunnel** (Mealie's API gets error 1010 for non-browser PATCH/PUT). If blocked: switch the item/store/unit/member/household/shopping-row updates to `PUT` on both sides and update the scoping-matrix `BODIES` keys.
-4. **MinIO public hostname** — homelab doc says `media.dinner-club.wispy-nook.casa`, Dinner Club's prod compose says `dinner-club-media.wispy-nook.casa`. Whichever is live becomes `S3_PUBLIC_ENDPOINT`; fix the wrong document. A CORS/signature error on photo upload means this value is wrong.
-5. **CSP vs. reality** — the Caddy CSP allows `connect-src/img-src https:` for presigned MinIO URLs. Watch the browser console on first photo upload and first scan.
-6. **Daily job time** — next morning, confirm `job_runs.last_run_at` ≈ 06:00 America/New_York (proves `TZ` + `tzdata`).
-7. **`deploy.yml`** was reviewed against the `workflow_run` payload schema but never executed. First run: confirm it checks out the CI-validated SHA and the `/api/ready` health check goes green.
+Live at https://plantry.wispy-nook.casa. Private repo `Zaphiruz/plantry`; CI on GitHub-hosted runners; Deploy on the S2 runner `S2-plantry`, triggered automatically after green CI on `main`. Docs-only commits (`**.md`, `docs/**`, `.env.example`) skip CI and therefore don't redeploy.
+
+| Was open | Outcome |
+|---|---|
+| GitHub owner | `Zaphiruz/plantry`; labels `feedback` / `user-submitted` created; issues-only PAT in Vault |
+| Port | **3008**, bound to `192.168.40.20` — 3007 was already taken on S2 by Aevum |
+| `TRUST_PROXY_HOPS` | **3**, not 2. Chain is Cloudflare → cloudflared (LC2) → nginx (LC2) → Caddy → backend, and Caddy discards `X-Forwarded-For` unless LC2 is listed under `trusted_proxies` (now in `apps/frontend/Caddyfile`). Verified: backend logs the real client IP; a spoofed `X-Forwarded-For` is ignored |
+| Browser `PATCH` through Cloudflare | Works (200). No PUT conversion needed |
+| MinIO public hostname | `https://dinner-club-media.wispy-nook.casa` (the homelab doc's `media.dinner-club…` had no DNS). Presigned upload + finalize verified |
+| CSP vs. presigned URLs | Fine — photo upload and display work under the deployed CSP |
+| Daily job time / push | `TZ` verified in the container; job forced once → digest delivered to a phone, tap opens the shopping list |
+| `deploy.yml` | Manual dispatch and the automatic `workflow_run` path both exercised; deploys the CI-validated SHA; `/api/ready` health check green |
+| Secrets | Loaded by `scripts/provision-secrets.sh` (nothing displayed or stored locally); deploy key also in Vault at `deploy-keys/plantry` |
+
+Observed, not fixed: Cloudflare's zone-wide Browser Cache TTL (4 h) rewrites `sw.js`'s `no-cache` — set it to "Respect Existing Headers" (affects every PWA on the zone). Owner still to run on S2: `shred -u /root/.plantry-db-pw /root/.plantry-s3.json /root/.plantry-vault-token`.
+
+In progress: per-unit step setting (issue #1, "0.003 cans") on branch `feat/unit-step`.
 
 ## Deferred, by judgement (none blocks merge or first deploy)
 
