@@ -24,13 +24,17 @@ VAULT_ROOT_TOKEN=$(ask_secret "Vault root token (1Password)")
 OIDC_CLIENT_ID=$(ask "Authentik client ID (provider 'plantry')")
 OIDC_CLIENT_SECRET=$(ask_secret "Authentik client secret")
 GH_PAT=$(ask_secret "GitHub fine-grained PAT, Issues read/write on Zaphiruz/plantry (leave empty to skip feedback)")
-VAPID_EMAIL=$(ask "Contact email for web push (VAPID subject)")
+VAPID_EMAIL=$(ask "Contact email for web push (VAPID subject, e.g. you@example.com)")
+VAPID_EMAIL=${VAPID_EMAIL#mailto:}   # the mailto: prefix is added below; accept either form
 [ -n "$VAULT_ROOT_TOKEN" ] && [ -n "$OIDC_CLIENT_ID" ] && [ -n "$OIDC_CLIENT_SECRET" ] && [ -n "$VAPID_EMAIL" ] \
   || { say "Vault token, client ID, client secret and email are required."; exit 1; }
 
 say "== Generating SESSION_SECRET and VAPID keypair (in memory) =="
 SESSION_SECRET=$(openssl rand -hex 32)
-VAPID_JSON=$(corepack pnpm --silent --filter @plantry/backend exec web-push generate-vapid-keys --json)
+# Plain node + the already-installed web-push module (no corepack/pnpm: corepack 0.29 fails signature checks in some shells).
+[ -d apps/backend/node_modules/web-push ] || { say "apps/backend/node_modules/web-push is missing - run 'pnpm install' first."; exit 1; }
+VAPID_JSON=$(cd apps/backend && node --input-type=module -e "import wp from 'web-push'; console.log(JSON.stringify(wp.generateVAPIDKeys()))")
+[ -n "$VAPID_JSON" ] || { say "VAPID key generation failed."; exit 1; }
 
 say "== Reading DB password and MinIO keys from S2 =="
 DB_PW=$(ssh -o BatchMode=yes S2 'cat /root/.plantry-db-pw')
