@@ -57,6 +57,19 @@ describe('rate limiting', () => {
     }
     expect(codes.every((c) => c !== 429)).toBe(true);
   });
+
+  it('is not bypassed by sending a different plantry_sid cookie on every request', async () => {
+    const a = await build({ rateLimitMax: 3 });
+    const codes: number[] = [];
+    for (let i = 0; i < 5; i++) {
+      const r = await a.inject({
+        method: 'GET', url: '/api/me',
+        headers: { origin: TEST_ORIGIN, cookie: `plantry_sid=fake-sid-${i}-${Math.random()}` },
+      });
+      codes.push(r.statusCode);
+    }
+    expect(codes[codes.length - 1]).toBe(429);
+  });
 });
 
 describe('GET /api/ready', () => {

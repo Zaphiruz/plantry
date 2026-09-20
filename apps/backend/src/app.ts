@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import Fastify, { type FastifyError, type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import cookie from '@fastify/cookie';
 import rateLimit from '@fastify/rate-limit';
@@ -80,13 +79,12 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
       global: true,
       max: options.rateLimitMax ?? 600,
       timeWindow: '1 minute',
-      allowList: (req) => req.url === '/health' || req.url === '/api/ready',
-      // Bucket by session (unspoofable) when the caller has one, else by the peer address.
-      // `req.ip` only reflects X-Forwarded-For when trustProxyHops > 0.
-      keyGenerator: (req) => {
-        const sid = req.cookies?.[cookieName];
-        return sid ? `sid:${createHash('sha256').update(sid).digest('hex')}` : `ip:${req.ip}`;
-      },
+      allowList: (req) => req.url === '/health',
+      // Bucket by peer address only: `plantry_sid` is an unsigned, client-supplied cookie value,
+      // so keying on it lets a client mint a fresh bucket per request just by sending a new
+      // cookie. `req.ip` only reflects X-Forwarded-For when trustProxyHops > 0, so it is
+      // trustworthy here.
+      keyGenerator: (req) => `ip:${req.ip}`,
     });
   }
   const ttlSeconds = options.sessionTtlSeconds ?? 7 * 24 * 60 * 60;
