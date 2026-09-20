@@ -1,11 +1,19 @@
 import * as Dialog from '@radix-ui/react-dialog';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 interface Props { open: boolean; title: string; initial: number; unitLabel: string; allowNegative?: boolean; onConfirm(n: number): void; onClose(): void }
 
 export function QtyDialog({ open, title, initial, unitLabel, allowNegative, onConfirm, onClose }: Props) {
   const [value, setValue] = useState(String(initial));
-  useEffect(() => { if (open) setValue(String(initial)); }, [open, initial]);
+  // Hydrate only on the open transition (false -> true), not on every `initial` change while
+  // open — otherwise a background refetch (e.g. refetchOnFocus) overwrites what the user typed.
+  const wasOpen = useRef(open);
+  useEffect(() => {
+    if (open && !wasOpen.current) setValue(String(initial));
+    wasOpen.current = open;
+    // Intentionally omits `initial`: re-hydrate only on the open transition, not on every
+    // `initial` change while open (e.g. a background refetch).
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   const n = Number(value);
   const valid = value.trim() !== '' && Number.isFinite(n) && (allowNegative || n > 0);
   return (
