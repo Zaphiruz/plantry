@@ -72,7 +72,7 @@ vault kv put secret/plantry \
   AUTHENTIK_ISSUER_URL='https://authentik.wispy-nook.casa/application/o/plantry/' \
   AUTHENTIK_CLIENT_ID='<id>' AUTHENTIK_CLIENT_SECRET='<secret>' \
   AUTHENTIK_REDIRECT_URI='https://plantry.wispy-nook.casa/api/auth/callback' \
-  AUTHENTIK_ADMIN_GROUP='plantry-admins' TRUST_PROXY_HOPS='2' \
+  AUTHENTIK_ADMIN_GROUP='plantry-admins' TRUST_PROXY_HOPS='3' \
   VAPID_PUBLIC_KEY='<pub>' VAPID_PRIVATE_KEY='<priv>' VAPID_SUBJECT='mailto:<you>' \
   S3_ENDPOINT='http://192.168.40.20:9002' S3_PUBLIC_ENDPOINT='https://dinner-club-media.wispy-nook.casa' \
   S3_REGION='us-east-1' S3_BUCKET='plantry-media' S3_ACCESS_KEY='<svcacct>' S3_SECRET_KEY='<svcacct secret>' \
@@ -83,13 +83,15 @@ Never put `AUTH_DEV_BYPASS` in Vault. The entrypoint ignores it (and `NODE_ENV`,
 `NODE_EXTRA_CA_CERTS`, `TZ`, `PATH`) if present, logging the ignored key names; the backend also
 refuses to boot with the bypass in production.
 
-`TRUST_PROXY_HOPS='2'` is the **hop count**, not a toggle. Requests reach the backend as
-`client → nginx (edge) → Caddy (frontend container) → backend`, and each proxy *appends* to
-`X-Forwarded-For`, so the address chain the backend sees is `[Caddy, nginx, client]`. Trusting
-2 hops (Caddy and nginx) makes `req.ip` the real client address; trusting more would let a
-client prepend a fake address and get a fresh rate-limit bucket per request. If the proxy
-chain in front of Plantry changes, change this number to match — set it to `0` to fall back to
-the peer address.
+`TRUST_PROXY_HOPS='3'` is the **hop count**, not a toggle. Measured at first deploy (2026-09-20), requests reach the
+backend as `Cloudflare edge → cloudflared (LC2, 127.0.0.1) → nginx (LC2) → Caddy (frontend container) → backend`.
+cloudflared supplies the real client address in `X-Forwarded-For`, nginx appends `127.0.0.1`, and Caddy appends LC2's
+address — but **only because `apps/frontend/Caddyfile` lists LC2 under `trusted_proxies`**; by default Caddy discards an
+incoming `X-Forwarded-For`, and the backend then sees every request as `192.168.40.11`. The chain the backend sees is
+`[Caddy, LC2, 127.0.0.1, client, …anything the client prepended]`; trusting exactly 3 hops makes `req.ip` the real
+client and leaves client-prepended values unreachable. Trusting more would let a client mint a fresh rate-limit bucket
+per request. If the chain changes (LC2's IP, a proxy added or removed), update both the Caddyfile and this number; `0`
+falls back to the peer address. Check with: `docker logs plantry-backend-1 | grep remoteAddress | tail`.
 
 - [ ] **Step 14: S2 checkout, runner, token**
 

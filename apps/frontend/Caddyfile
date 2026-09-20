@@ -1,3 +1,15 @@
+# Caddy drops an incoming X-Forwarded-For unless the peer is a trusted proxy, so without this the
+# backend sees every request as coming from nginx on LC2 and all users share one rate-limit
+# bucket. Trust ONLY LC2 (static 192.168.40.11): any other host on the VLAN that connects to this
+# port directly still has its X-Forwarded-For discarded, so client IPs can't be spoofed.
+# Chain: Cloudflare edge -> cloudflared (LC2, 127.0.0.1) -> nginx (LC2) -> Caddy -> backend,
+# which is why the backend runs with TRUST_PROXY_HOPS=3.
+{
+  servers {
+    trusted_proxies static 192.168.40.11/32
+  }
+}
+
 # connect-src https: — presigned PUTs go straight to the MinIO hostname.
 # img-src https: — presigned GETs for item photos and thumbnails.
 # Kept as a snippet because Caddy applies only ONE matching `header` directive per request, so

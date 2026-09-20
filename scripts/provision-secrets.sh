@@ -51,7 +51,7 @@ d = {
   "SESSION_SECRET": os.environ["SESSION_SECRET"],
   "SESSION_COOKIE_SECURE": "true",
   "FRONTEND_ORIGIN": "https://plantry.wispy-nook.casa",
-  "TRUST_PROXY_HOPS": "2",   # nginx (LC2) -> Caddy. Change this if the proxy chain changes.
+  "TRUST_PROXY_HOPS": "3",   # cloudflared -> nginx (both LC2) -> Caddy; Caddy trusts only LC2. Change if the chain changes.
   "AUTHENTIK_ISSUER_URL": "https://authentik.wispy-nook.casa/application/o/plantry/",
   "AUTHENTIK_CLIENT_ID": os.environ["OIDC_CLIENT_ID"],
   "AUTHENTIK_CLIENT_SECRET": os.environ["OIDC_CLIENT_SECRET"],
