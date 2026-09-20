@@ -42,7 +42,7 @@ Record the printed access/secret key for Vault. Confirm which public hostname fr
 ```bash
 grep MINIO_SERVER_URL /opt/dinner-club/docker-compose.prod.yml
 ```
-Use that value as `S3_PUBLIC_ENDPOINT`, and fix whichever document is wrong.
+Use that value as `S3_PUBLIC_ENDPOINT`, and fix whichever document is wrong. **Checked 2026-09-19: the live value is `https://dinner-club-media.wispy-nook.casa`** (the homelab doc's `media.dinner-club…` is the stale one).
 
 - [ ] **Step 11: VAPID keys**
 
@@ -74,7 +74,7 @@ vault kv put secret/plantry \
   AUTHENTIK_REDIRECT_URI='https://plantry.wispy-nook.casa/api/auth/callback' \
   AUTHENTIK_ADMIN_GROUP='plantry-admins' TRUST_PROXY_HOPS='2' \
   VAPID_PUBLIC_KEY='<pub>' VAPID_PRIVATE_KEY='<priv>' VAPID_SUBJECT='mailto:<you>' \
-  S3_ENDPOINT='http://192.168.40.20:9002' S3_PUBLIC_ENDPOINT='https://<confirmed in step 10>' \
+  S3_ENDPOINT='http://192.168.40.20:9002' S3_PUBLIC_ENDPOINT='https://dinner-club-media.wispy-nook.casa' \
   S3_REGION='us-east-1' S3_BUCKET='plantry-media' S3_ACCESS_KEY='<svcacct>' S3_SECRET_KEY='<svcacct secret>' \
   GITHUB_FEEDBACK_TOKEN='<pat>' GITHUB_FEEDBACK_REPO='Zaphiruz/plantry'
 bash /opt/vault/add-app-token.sh plantry plantry     # prints the periodic token; auto-registered for weekly renewal
@@ -114,7 +114,7 @@ server {
     ssl_certificate_key /etc/nginx/certs/cloudflare-origin.key;
     client_max_body_size 1m;
     location / {
-        proxy_pass http://192.168.40.20:3007;
+        proxy_pass http://192.168.40.20:3008;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-Proto https;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -152,7 +152,7 @@ gh workflow run deploy.yml --repo Zaphiruz/plantry
 
 - [ ] **Step 18: Record it in the homelab doc**
 
-In `D:\docs\mikrotik\CLAUDE.md`: add Plantry to the S2 row of "Hardware & IPs" (frontend port 3007), to `shared-infra` databases (`plantry`), to the Cloudflare Tunnel active hostnames, to Authentik groups (`plantry-users`, `plantry-admins`), a "Plantry" gotcha block in the same style as Velvet Scoop's (repo, runner path, Vault path + key list, MinIO bucket `plantry-media` on Dinner Club's instance with a scoped service account, daily job at 06:00 ET, feedback → GitHub issues), a row in "Internal Services", and a dated "Resolved" entry. Correct the MinIO hostname there if step 10 showed it was wrong.
+In `D:\docs\mikrotik\CLAUDE.md`: add Plantry to the S2 row of "Hardware & IPs" (frontend port 3008), to `shared-infra` databases (`plantry`), to the Cloudflare Tunnel active hostnames, to Authentik groups (`plantry-users`, `plantry-admins`), a "Plantry" gotcha block in the same style as Velvet Scoop's (repo, runner path, Vault path + key list, MinIO bucket `plantry-media` on Dinner Club's instance with a scoped service account, daily job at 06:00 ET, feedback → GitHub issues), a row in "Internal Services", and a dated "Resolved" entry. Correct the MinIO hostname there if step 10 showed it was wrong.
 
 - [ ] **Step 19: Final commit**
 

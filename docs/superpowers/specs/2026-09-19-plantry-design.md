@@ -67,11 +67,11 @@ Each is a Fastify plugin. Routes are thin; logic lives in services that take a P
 
 ### 2.4 Deployment (S2, per "Adding a new app" checklist)
 
-- `/opt/plantry/docker-compose.prod.yml`: `backend` (no host port; networks `shared-db`; mounts Cloudflare Origin CA, `NODE_EXTRA_CA_CERTS`; `TZ=America/New_York`) and `frontend` (Caddy, `3007:80`, proxies `/api/*` → `backend:3000`). `restart: unless-stopped`.
+- `/opt/plantry/docker-compose.prod.yml`: `backend` (no host port; networks `shared-db`; mounts Cloudflare Origin CA, `NODE_EXTRA_CA_CERTS`; `TZ=America/New_York`) and `frontend` (Caddy, `192.168.40.20:3008:80`, proxies `/api/*` → `backend:3000`). `restart: unless-stopped`.
 - PostgreSQL: user `plantry`, database `plantry` created with `TEMPLATE template0` (collation-mismatch gotcha).
 - Vault: policy `plantry`, periodic token via `add-app-token.sh`, `.env` holds only `VAULT_ADDR` + `VAULT_TOKEN`; `entrypoint.mjs` fetches `secret/data/plantry`:
   `DATABASE_URL`, `SESSION_SECRET`, `FRONTEND_ORIGIN`, `AUTHENTIK_ISSUER_URL`, `AUTHENTIK_CLIENT_ID`, `AUTHENTIK_CLIENT_SECRET`, `AUTHENTIK_REDIRECT_URI`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, `GITHUB_FEEDBACK_TOKEN`, `GITHUB_FEEDBACK_REPO`, `S3_ENDPOINT`, `S3_PUBLIC_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`.
-- nginx server block on LC2 (`proxy_pass http://192.168.40.20:3007`, `X-Forwarded-Proto https`), Cloudflare Tunnel public hostname `plantry.wispy-nook.casa`. Fastify `trustProxy: true`.
+- nginx server block on LC2 (`proxy_pass http://192.168.40.20:3008`, `X-Forwarded-Proto https`), Cloudflare Tunnel public hostname `plantry.wispy-nook.casa`. Fastify `trustProxy: true`.
 - GitHub repo **private**; self-hosted runner `/opt/actions-runner-plantry` as `runner`; deploy key + SSH host alias `github.com-plantry`. Deploy workflow runs only after CI passes on `main`: pull → `docker compose build` → `prisma migrate deploy` (one-off `compose run`, `DATABASE_URL` injected from Vault via the python3 one-liner pattern) → `up -d` → health check.
 - **PATCH check**: Mealie's external API returns Cloudflare 1010 on PATCH/PUT from non-browser clients. Verify a browser-originated `PATCH /items/:id` passes the tunnel during first deploy; if blocked, switch item/store/unit/member updates to `PUT`.
 - Local dev: `docker-compose.yml` with postgres + minio + minio-setup (bucket create); `AUTH_DEV_BYPASS=1` stub user for non-production only (refuses to start if `NODE_ENV=production`).

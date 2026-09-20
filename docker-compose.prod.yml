@@ -24,7 +24,7 @@ services:
     depends_on:
       backend:
         condition: service_healthy
-    ports: ["3007:80"]
+    ports: ["192.168.40.20:3008:80"]   # LAN address only (3007 is taken by Aevum); nginx on LC2 is the only intended client
     logging: *default-logging
 
 networks:
