@@ -8,8 +8,8 @@ This document is the runbook for provisioning, deploying, and operating Plantry 
 
 Create a **private** repo (self-hosted runner + public repo = arbitrary code execution risk via fork PRs — see the 2026-07-08 note in the homelab doc). Push `main`. Set fork-PR approval to "all external contributors" anyway. Create the two labels the feedback feature uses:
 ```bash
-gh label create feedback --repo <owner>/plantry --color 0E8A16
-gh label create user-submitted --repo <owner>/plantry --color 1D76DB
+gh label create feedback --repo Zaphiruz/plantry --color 0E8A16
+gh label create user-submitted --repo Zaphiruz/plantry --color 1D76DB
 ```
 Create a fine-grained PAT limited to this repo with **Issues: read & write** only → this becomes `GITHUB_FEEDBACK_TOKEN`.
 
@@ -76,7 +76,7 @@ vault kv put secret/plantry \
   VAPID_PUBLIC_KEY='<pub>' VAPID_PRIVATE_KEY='<priv>' VAPID_SUBJECT='mailto:<you>' \
   S3_ENDPOINT='http://192.168.40.20:9002' S3_PUBLIC_ENDPOINT='https://<confirmed in step 10>' \
   S3_REGION='us-east-1' S3_BUCKET='plantry-media' S3_ACCESS_KEY='<svcacct>' S3_SECRET_KEY='<svcacct secret>' \
-  GITHUB_FEEDBACK_TOKEN='<pat>' GITHUB_FEEDBACK_REPO='<owner>/plantry'
+  GITHUB_FEEDBACK_TOKEN='<pat>' GITHUB_FEEDBACK_REPO='Zaphiruz/plantry'
 bash /opt/vault/add-app-token.sh plantry plantry     # prints the periodic token; auto-registered for weekly renewal
 ```
 Never put `AUTH_DEV_BYPASS` in Vault. The entrypoint ignores it (and `NODE_ENV`, `NODE_OPTIONS`,
@@ -96,7 +96,7 @@ the peer address.
 As `runner` on S2: create a deploy key (`~/.ssh/plantry-deploy`), add it read-only to the GitHub repo, add SSH host alias `github.com-plantry` in `~/.ssh/config` (copy the `github.com-velvet-scoop` block), then:
 ```bash
 sudo mkdir -p /opt/plantry && sudo chown runner:runner /opt/plantry
-git clone git@github.com-plantry:<owner>/plantry.git /opt/plantry
+git clone git@github.com-plantry:Zaphiruz/plantry.git /opt/plantry
 cd /opt/plantry
 ( umask 077; printf '%s' '<token from step 13>' > vault-token ) && chmod 400 vault-token
 bash fetch-secrets.sh
@@ -127,7 +127,14 @@ server {
 
 - [ ] **Step 16: Deploy**
 
-`gh workflow run deploy.yml --repo <owner>/plantry` (or push to `main`). Watch the run; the health-check step must print `healthy`.
+The Deploy workflow is **disabled** in GitHub (there was no self-hosted runner when the repo was created, so every green CI run queued a deploy job that could never start). Once the runner from step 14 is online, enable it:
+
+```bash
+gh workflow enable deploy.yml --repo Zaphiruz/plantry
+gh workflow run deploy.yml --repo Zaphiruz/plantry
+```
+
+(or push to `main`). Watch the run; the health-check step must pass.
 
 - [ ] **Step 17: Verify in production — every line must be checked off**
 
