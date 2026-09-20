@@ -6,12 +6,30 @@
   "scripts": {
     "dev": "pnpm -r --parallel --filter=./apps/* dev",
     "build": "pnpm -r build",
+    "lint": "eslint .",
     "test": "pnpm -r test",
     "typecheck": "pnpm -r typecheck",
     "prisma:migrate": "pnpm --filter @plantry/backend prisma migrate dev",
     "prisma:generate": "pnpm --filter @plantry/backend prisma generate"
   },
-  "devDependencies": { "prettier": "^3.3.3", "typescript": "^5.6.3" },
-  "engines": { "node": ">=20.10.0" },
-  "pnpm": { "onlyBuiltDependencies": ["@prisma/client", "@prisma/engines", "prisma", "esbuild"] }
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "globals": "^15.15.0",
+    "prettier": "^3.3.3",
+    "typescript": "^5.6.3",
+    "typescript-eslint": "^8.70.0"
+  },
+  "engines": {
+    "node": ">=20.10.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@prisma/client",
+      "@prisma/engines",
+      "prisma",
+      "esbuild"
+    ]
+  }
 }

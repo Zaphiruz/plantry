@@ -23,5 +23,7 @@ jobs:
       - run: pnpm --filter @plantry/backend exec prisma generate
       - run: pnpm --filter @plantry/backend exec prisma migrate deploy
         env: { DATABASE_URL: "postgres://plantry:plantry@localhost:5434/plantry_test" }
+      - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm build
