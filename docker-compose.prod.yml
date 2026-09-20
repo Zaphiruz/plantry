@@ -1,3 +1,7 @@
+x-logging: &default-logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
 services:
   backend:
     build: { context: ., dockerfile: apps/backend/Dockerfile }
@@ -10,13 +14,18 @@ services:
     volumes:
       - /usr/local/share/ca-certificates/cloudflare-origin-ca.crt:/etc/ssl/extra/cloudflare-ca.crt:ro
     networks: [default, shared-db]
+    logging: *default-logging
 
   frontend:
     build: { context: ., dockerfile: apps/frontend/Dockerfile }
     image: plantry-frontend:latest
     restart: unless-stopped
-    depends_on: [backend]
+    # Wait for the backend's HEALTHCHECK, so the first request through Caddy cannot 502.
+    depends_on:
+      backend:
+        condition: service_healthy
     ports: ["3007:80"]
+    logging: *default-logging
 
 networks:
   shared-db:

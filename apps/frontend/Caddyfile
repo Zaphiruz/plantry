@@ -1,3 +1,14 @@
+# connect-src https: — presigned PUTs go straight to the MinIO hostname.
+# img-src https: — presigned GETs for item photos and thumbnails.
+# Kept as a snippet because Caddy applies only ONE matching `header` directive per request, so
+# each handle block needs its security headers and its Cache-Control set together.
+(security_headers) {
+  X-Content-Type-Options "nosniff"
+  Referrer-Policy "strict-origin-when-cross-origin"
+  X-Frame-Options "DENY"
+  Content-Security-Policy "default-src 'self'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; connect-src 'self' https:; media-src 'self' blob:; worker-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+}
+
 :80 {
   encode gzip zstd
 
@@ -5,12 +16,26 @@
     reverse_proxy backend:3000
   }
 
-  # Service worker + manifest must never be cached, or clients get stuck on old builds.
-  @nocache path /sw.js /manifest.webmanifest /index.html
-  header @nocache Cache-Control "no-cache"
+  # Hashed build output is immutable: its name changes whenever the bytes do.
+  handle /assets/* {
+    root * /srv
+    header {
+      import security_headers
+      Cache-Control "public, max-age=31536000, immutable"
+    }
+    file_server
+  }
 
+  # Everything else is either the service worker, the manifest, or index.html served under an
+  # app route by the SPA fallback — all of which must revalidate, or clients get stranded on an
+  # old build. (The previous matcher only covered the literal /index.html, so every app route
+  # such as /h/abc/shopping was served cacheable.)
   handle {
     root * /srv
+    header {
+      import security_headers
+      Cache-Control "no-cache"
+    }
     try_files {path} /index.html
     file_server
   }
