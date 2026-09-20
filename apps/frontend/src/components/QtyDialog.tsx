@@ -14,6 +14,7 @@ export function QtyDialog({ open, title, initial, unitLabel, allowNegative, onCo
         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/40" />
         <Dialog.Content className="fixed inset-x-4 top-1/4 z-50 mx-auto max-w-sm space-y-4 rounded-2xl bg-white p-5 shadow-xl">
           <Dialog.Title className="text-lg font-semibold">{title}</Dialog.Title>
+          <Dialog.Description className="sr-only">Enter a quantity in {unitLabel} and confirm.</Dialog.Description>
           <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); if (valid) { onConfirm(n); onClose(); } }}>
             <label className="flex items-center gap-2">
               <input autoFocus className="input" type="number" inputMode="decimal" step="0.001" value={value} onChange={(e) => setValue(e.target.value)} aria-label="Quantity" />

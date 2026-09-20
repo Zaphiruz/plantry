@@ -4,6 +4,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { type ItemDto } from '@plantry/shared';
 import { useConsumeMutation, useGetInventoryQuery, useLazyFindByBarcodeQuery, useRestockMutation } from '../api';
 import { ItemRow } from '../components/ItemRow';
+import { QueryError } from '../components/QueryError';
 import { Scanner } from '../components/Scanner';
 import { useToast } from '../components/Toast';
 import { errorMessage, formatQty } from '../lib/format';
@@ -12,7 +13,7 @@ export function Inventory() {
   const { hid = '' } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
-  const { data: items, isLoading } = useGetInventoryQuery(hid);
+  const { data: items, isLoading, isError, error, refetch } = useGetInventoryQuery(hid);
   const [q, setQ] = useState('');
   const [category, setCategory] = useState<string | null>(null);
   const [lowOnly, setLowOnly] = useState(false);
@@ -54,12 +55,13 @@ export function Inventory() {
           <Link to={`/h/${hid}/items/new`} className="btn-primary whitespace-nowrap">+ New</Link>
         </div>
         <div className="flex gap-2 overflow-x-auto">
-          <button type="button" className={chip(lowOnly)} onClick={() => setLowOnly((v) => !v)}>Low</button>
-          {categories.map((c) => <button type="button" key={c} className={chip(category === c)} onClick={() => setCategory(category === c ? null : c)}>{c}</button>)}
+          <button type="button" className={chip(lowOnly)} aria-pressed={lowOnly} onClick={() => setLowOnly((v) => !v)}>Low</button>
+          {categories.map((c) => <button type="button" key={c} className={chip(category === c)} aria-pressed={category === c} onClick={() => setCategory(category === c ? null : c)}>{c}</button>)}
         </div>
       </div>
       {isLoading && <p className="p-4 text-slate-500">Loading…</p>}
-      {items && items.length === 0 && <p className="p-8 text-center text-slate-500">Nothing here yet. Add your first item.</p>}
+      {isError && <QueryError error={error} onRetry={() => void refetch()} />}
+      {items && items.length === 0 &&<p className="p-8 text-center text-slate-500">Nothing here yet. Add your first item.</p>}
       <ul>{shown.map((i) => <ItemRow key={i.id} hid={hid} item={i} />)}</ul>
       <Scanner open={scanning} onDetected={onDetected} onClose={() => setScanning(false)} />
       <Dialog.Root open={!!match} onOpenChange={(o) => !o && setMatch(null)}>

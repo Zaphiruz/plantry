@@ -6,9 +6,12 @@ import { App } from './App';
 import { ToastProvider } from './components/Toast';
 import { store } from './store';
 import './index.css';
+import { registerServiceWorker } from './registerSW';
 
 createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <Provider store={store}><BrowserRouter><ToastProvider><App /></ToastProvider></BrowserRouter></Provider>
   </React.StrictMode>,
 );
+
+registerServiceWorker();

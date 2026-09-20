@@ -27,6 +27,13 @@ interface StockResult { item: ItemDto; eventId: string | null }
 export const api = createApi({
   reducerPath: 'api',
   baseQuery,
+  // Presigned photo URLs live for an hour. Refetching when the tab regains focus (or the
+  // network comes back) is what actually replaces the expired ones — `setupListeners` in
+  // store.ts only dispatches the events; without these flags nothing opts in. Every form in
+  // the app hydrates local state from a query exactly once per id, so a refetch cannot
+  // clobber what the user is typing.
+  refetchOnFocus: true,
+  refetchOnReconnect: true,
   tagTypes: ['Me', 'Members', 'Stores', 'Units', 'Items', 'Shopping', 'Events', 'Rates', 'Feedback'],
   endpoints: (b) => ({
     getMe: b.query<MeDto, void>({ query: () => '/me', providesTags: ['Me'] }),
@@ -95,18 +102,26 @@ export const api = createApi({
   }),
 });
 
-/** Optimistically bumps the count in the cached inventory list; rolls back if the request fails. */
+/**
+ * Optimistically bumps the count in the cached inventory list; rolls back if the request fails.
+ *
+ * Rollback applies the INVERSE DELTA rather than `patch.undo()`. `undo()` restores the snapshot
+ * that was taken before this particular patch, so with two rapid taps in flight the first
+ * failure would wipe out the second tap's optimistic change and the second failure would then
+ * restore it — leaving the wrong count. Deltas compose in any order.
+ */
 async function optimisticCount(
   hid: string, itemId: string, delta: number,
   { dispatch, queryFulfilled }: { dispatch: (a: any) => any; queryFulfilled: Promise<unknown> },
 ): Promise<void> {
-  const patch = dispatch(api.util.updateQueryData('getInventory', hid, (draft) => {
+  const apply = (d: number) => dispatch(api.util.updateQueryData('getInventory', hid, (draft) => {
     const item = draft.find((i) => i.id === itemId);
     if (!item) return;
-    item.currentCount = Math.round((item.currentCount + delta) * 1000) / 1000;
+    item.currentCount = Math.round((item.currentCount + d) * 1000) / 1000;
     item.low = item.currentCount <= item.minStock;
   }));
-  try { await queryFulfilled; } catch { patch.undo(); }
+  apply(delta);
+  try { await queryFulfilled; } catch { apply(-delta); }
 }
 
 export const {

@@ -14,9 +14,18 @@ export function urlBase64ToUint8Array(b64: string): Uint8Array {
   return Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
 }
 
+/** How long to wait for the service worker to activate before falling back (cold load). */
+export const SW_READY_TIMEOUT_MS = 1500;
+
 export async function currentSubscription(): Promise<PushSubscription | null> {
   if (!pushSupported()) return null;
-  const reg = await navigator.serviceWorker.getRegistration();
+  // On a cold load `getRegistration()` can still resolve to undefined while the worker is
+  // installing, which would show an already-subscribed user the "Turn on" label. Wait for
+  // `ready` — but only briefly, so a browser that never activates a worker cannot wedge the
+  // Settings screen.
+  const timeout = new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), SW_READY_TIMEOUT_MS));
+  const reg = (await Promise.race([navigator.serviceWorker.ready, timeout]))
+    ?? (await navigator.serviceWorker.getRegistration());
   return (await reg?.pushManager.getSubscription()) ?? null;
 }
 

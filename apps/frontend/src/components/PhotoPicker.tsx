@@ -48,7 +48,7 @@ export function PhotoPicker({ hid, item }: { hid: string; item: ItemDto }) {
         className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-xl border border-dashed border-slate-300 bg-slate-100 text-sm text-slate-500">
         {busy ? '…' : item.imageUrl ? <img src={item.imageUrl} alt={item.name} className="h-full w-full object-cover" /> : '+ Photo'}
       </button>
-      {item.imageUrl && !busy && <button type="button" className="text-xs text-slate-500 underline" onClick={() => void onRemove()}>Remove</button>}
+      {item.imageUrl && !busy && <button type="button" className="min-h-11 text-xs text-slate-500 underline" onClick={() => void onRemove()}>Remove</button>}
       <input ref={input} type="file" accept="image/*" capture="environment" hidden onChange={(e) => void onFile(e.target.files?.[0])} />
     </div>
   );

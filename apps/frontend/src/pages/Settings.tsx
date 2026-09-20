@@ -123,7 +123,11 @@ export function Settings() {
             <p className="text-sm text-slate-600">{needsIosInstall()
               ? 'On iPhone/iPad, first add Plantry to your Home Screen (Share → Add to Home Screen), then open it from there to turn on notifications.'
               : 'This browser does not support push notifications.'}</p>)
-          : (<button className={subscribed ? 'btn-ghost w-full' : 'btn-primary w-full'} onClick={() => run(async () => {
+          : (<button className={subscribed ? 'btn-ghost w-full' : 'btn-primary w-full'}
+              // Turning ON needs the VAPID key; it arrives asynchronously, and without this guard
+              // an early tap threw a TypeError that surfaced as "Something went wrong".
+              disabled={!subscribed && !vapid?.publicKey}
+              onClick={() => run(async () => {
               if (subscribed) {
                 // Drop the browser subscription first, then tell the server — but keep local state
                 // consistent regardless of whether the server call succeeds: once the browser
@@ -133,7 +137,9 @@ export function Settings() {
                 try { if (endpoint) await pushUnsub({ endpoint }).unwrap(); } finally { setSubscribed(false); }
                 return;
               }
-              const json = await subscribePush(vapid!.publicKey!);
+              const key = vapid?.publicKey;
+              if (!key) throw new Error('Notifications are not available right now — try again in a moment');
+              const json = await subscribePush(key);
               await pushSub({ endpoint: json.endpoint!, keys: { p256dh: json.keys!['p256dh']!, auth: json.keys!['auth']! } }).unwrap();
               setSubscribed(true);
             }, subscribed ? 'Notifications off on this device' : 'Notifications on for this device')}>{subscribed ? 'Turn off on this device' : 'Turn on for this device'}</button>)}

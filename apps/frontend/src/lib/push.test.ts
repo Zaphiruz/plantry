@@ -1,7 +1,40 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { needsIosInstall, sameKey, subscribePush, urlBase64ToUint8Array } from './push';
+import { currentSubscription, needsIosInstall, sameKey, subscribePush, urlBase64ToUint8Array } from './push';
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
+
+describe('currentSubscription', () => {
+  const sub = { endpoint: 'https://sub' } as unknown as PushSubscription;
+
+  function stubSw(serviceWorker: unknown) {
+    vi.stubGlobal('navigator', { ...navigator, serviceWorker });
+    vi.stubGlobal('PushManager', class {});
+    vi.stubGlobal('Notification', { requestPermission: vi.fn() });
+  }
+
+  it('waits for serviceWorker.ready rather than trusting an empty getRegistration()', async () => {
+    const getRegistration = vi.fn().mockResolvedValue(undefined);
+    stubSw({
+      ready: Promise.resolve({ pushManager: { getSubscription: async () => sub } }),
+      getRegistration,
+    });
+
+    await expect(currentSubscription()).resolves.toBe(sub);
+    expect(getRegistration).not.toHaveBeenCalled();
+  });
+
+  it('falls back to getRegistration() when ready never resolves', async () => {
+    vi.useFakeTimers();
+    stubSw({
+      ready: new Promise(() => {}),
+      getRegistration: vi.fn().mockResolvedValue({ pushManager: { getSubscription: async () => sub } }),
+    });
+
+    const pending = currentSubscription();
+    await vi.advanceTimersByTimeAsync(2000);
+    await expect(pending).resolves.toBe(sub);
+  });
+});
 
 function toB64url(bytes: Uint8Array): string {
   let bin = '';

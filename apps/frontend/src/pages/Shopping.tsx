@@ -5,6 +5,7 @@ import {
   useAddToListMutation, useCheckListRowMutation, useGetShoppingListQuery, useGetStoresQuery, usePurchaseMutation, useRemoveListRowMutation, useUndoEventMutation,
 } from '../api';
 import { QtyDialog } from '../components/QtyDialog';
+import { QueryError } from '../components/QueryError';
 import { useToast } from '../components/Toast';
 import { errorMessage, formatQty } from '../lib/format';
 import { useLongPress } from '../lib/useLongPress';
@@ -68,7 +69,7 @@ function TextEntryRow({ hid, entry }: { hid: string; entry: TextEntry }) {
 
 export function Shopping() {
   const { hid = '' } = useParams();
-  const { data, isLoading } = useGetShoppingListQuery(hid, { refetchOnMountOrArgChange: true });
+  const { data, isLoading, isError, error, refetch } = useGetShoppingListQuery(hid, { refetchOnMountOrArgChange: true });
   const { data: stores } = useGetStoresQuery(hid);
   const [addToList] = useAddToListMutation();
   const [name, setName] = useState(''); const [storeId, setStoreId] = useState('');
@@ -85,7 +86,8 @@ export function Shopping() {
         <button className="btn-primary">Add</button>
       </form>
       {isLoading && <p className="p-4 text-slate-500">Loading…</p>}
-      {data?.groups.length === 0 && <p className="p-8 text-center text-slate-500">All stocked up. 🎉</p>}
+      {isError && <QueryError error={error} onRetry={() => void refetch()} />}
+      {data?.groups.length === 0 &&<p className="p-8 text-center text-slate-500">All stocked up. 🎉</p>}
       {data?.groups.map((g) => (
         <section key={g.store?.id ?? 'any'}>
           <h2 className="sticky top-[57px] z-10 bg-slate-100 px-3 py-1 text-sm font-semibold uppercase tracking-wide text-slate-600">{g.store?.name ?? 'Any store'}</h2>

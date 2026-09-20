@@ -61,6 +61,41 @@ describe('useLongPress', () => {
     expect(onClick).not.toHaveBeenCalled();
   });
 
+  it('a keyboard/AT-synthesised click (detail 0) fires onClick once', () => {
+    const onLongPress = vi.fn();
+    const onClick = vi.fn();
+    const { getByText } = render(<Button onLongPress={onLongPress} onClick={onClick} />);
+    fireEvent.click(getByText('press'), { detail: 0 });
+    expect(onClick).toHaveBeenCalledTimes(1);
+    expect(onLongPress).not.toHaveBeenCalled();
+  });
+
+  it('a pointer tap followed by the browser click (detail 1) still fires onClick exactly once', () => {
+    const onLongPress = vi.fn();
+    const onClick = vi.fn();
+    const { getByText } = render(<Button onLongPress={onLongPress} onClick={onClick} />);
+    const btn = getByText('press');
+    fireEvent.pointerDown(btn);
+    vi.advanceTimersByTime(100);
+    fireEvent.pointerUp(btn);
+    fireEvent.click(btn, { detail: 1 });
+    expect(onClick).toHaveBeenCalledTimes(1);
+    expect(onLongPress).not.toHaveBeenCalled();
+  });
+
+  it('a hold is not re-fired by the trailing click', () => {
+    const onLongPress = vi.fn();
+    const onClick = vi.fn();
+    const { getByText } = render(<Button onLongPress={onLongPress} onClick={onClick} />);
+    const btn = getByText('press');
+    fireEvent.pointerDown(btn);
+    vi.advanceTimersByTime(500);
+    fireEvent.pointerUp(btn);
+    fireEvent.click(btn, { detail: 1 });
+    expect(onLongPress).toHaveBeenCalledTimes(1);
+    expect(onClick).not.toHaveBeenCalled();
+  });
+
   it('down, unmount, advance 600ms → onLongPress never fires', () => {
     const onLongPress = vi.fn();
     const onClick = vi.fn();

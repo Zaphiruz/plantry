@@ -1,35 +1,80 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { RATE_WINDOWS, type RateWindow } from '@plantry/shared';
+import { RATE_WINDOWS, type EventDto, type RateWindow } from '@plantry/shared';
 import {
   useAddToListMutation, useAdjustMutation, useArchiveItemMutation, useConsolidateMutation, useDeleteItemMutation, useGetEventsQuery,
-  useGetInventoryQuery, useGetItemQuery, useGetMeQuery, useGetRateQuery, useRemoveListRowMutation, useUnarchiveItemMutation,
+  useGetInventoryQuery, useGetItemQuery, useGetMeQuery, useGetRateQuery, useRemoveListRowMutation, useUnarchiveItemMutation, useUndoEventMutation,
 } from '../api';
 import { PhotoPicker } from '../components/PhotoPicker';
 import { QtyDialog } from '../components/QtyDialog';
+import { QueryError } from '../components/QueryError';
 import { useToast } from '../components/Toast';
 import { defaultWindowFor, errorMessage, formatQty } from '../lib/format';
 
 const EVENT_LABEL = { restock: 'Restocked', consume: 'Used', adjust: 'Adjusted', auto_deduct: 'Auto-used' } as const;
+
+/**
+ * The history pages loaded so far. `key` identifies the run (item id + newest event of page 0);
+ * when the head of the list changes, the accumulated tail is stale and is thrown away.
+ */
+interface History { key: string; cursors: (string | undefined)[]; pages: EventDto[][] }
+const EMPTY_HISTORY: History = { key: '', cursors: [], pages: [] };
 
 export function ItemDetail() {
   const { hid = '', id = '' } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
   const { data: me } = useGetMeQuery();
-  const { data: item } = useGetItemQuery({ hid, id });
+  const { data: item, isError: itemFailed, error: itemError, refetch: refetchItem } = useGetItemQuery({ hid, id });
   const { data: others } = useGetInventoryQuery(hid);
   const [rateWindow, setRateWindow] = useState<RateWindow | null>(null);
   const effectiveWindow = rateWindow ?? defaultWindowFor(item?.autoDeductPeriodDays ?? 1, item?.autoDeductQty != null);
   const { data: rate } = useGetRateQuery({ hid, id, window: effectiveWindow }, { skip: !item || !!item.archivedAt });
+
+  // History paging: "Older" appends a page instead of replacing the one on screen.
   const [cursor, setCursor] = useState<string | undefined>();
-  const { data: events } = useGetEventsQuery({ hid, itemId: id, ...(cursor ? { cursor } : {}) });
-  const [adjust] = useAdjustMutation(); const [archive] = useArchiveItemMutation(); const [unarchive] = useUnarchiveItemMutation();
+  const [history, setHistory] = useState<History>(EMPTY_HISTORY);
+  const [loadedFor, setLoadedFor] = useState(id);
+  let activeCursor = cursor;
+  if (loadedFor !== id) { // a different item: drop the accumulated tail before it can be queried
+    setLoadedFor(id); setCursor(undefined); setHistory(EMPTY_HISTORY); activeCursor = undefined;
+  }
+  // `currentData` (not `data`): while the args are switching, `data` still holds the PREVIOUS
+  // page, which would be appended a second time under the new cursor.
+  const { currentData: events } = useGetEventsQuery({ hid, itemId: id, ...(activeCursor ? { cursor: activeCursor } : {}) });
+  useEffect(() => {
+    if (!events) return;
+    setHistory((prev) => {
+      if (activeCursor === undefined) {
+        const key = `${id}:${events.events[0]?.id ?? 'none'}`;
+        // Same head → this is a refetch of page 0; keep the tail and refresh page 0 in place.
+        if (prev.key === key) return { ...prev, pages: prev.pages.map((p, i) => (i === 0 ? events.events : p)) };
+        return { key, cursors: [undefined], pages: [events.events] };
+      }
+      const at = prev.cursors.indexOf(activeCursor);
+      if (at !== -1) return { ...prev, pages: prev.pages.map((p, i) => (i === at ? events.events : p)) };
+      return { ...prev, cursors: [...prev.cursors, activeCursor], pages: [...prev.pages, events.events] };
+    });
+  }, [events, activeCursor, id]);
+  const rows = history.pages.flat();
+
+  const [adjust] = useAdjustMutation(); const [undo] = useUndoEventMutation();
+  const [archive] = useArchiveItemMutation(); const [unarchive] = useUnarchiveItemMutation();
   const [del] = useDeleteItemMutation(); const [consolidate] = useConsolidateMutation();
   const [addToList] = useAddToListMutation(); const [removeRow] = useRemoveListRowMutation();
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [mergeTarget, setMergeTarget] = useState(''); const [keepMin, setKeepMin] = useState<'target' | 'source'>('target');
 
+  if (itemFailed && !item) {
+    const gone = (itemError as { status?: number } | undefined)?.status === 404;
+    return gone
+      ? (
+        <QueryError error={{ data: { error: { message: 'This item no longer exists.' } } }}>
+          <Link className="btn-ghost inline-block" to={`/h/${hid}`}>Back to inventory</Link>
+        </QueryError>
+      )
+      : <QueryError error={itemError} onRetry={() => void refetchItem()} />;
+  }
   if (!item) return <p className="p-4 text-slate-500">Loading…</p>;
   const run = async (fn: () => Promise<unknown>, after?: () => void) => { try { await fn(); after?.(); } catch (err) { toast.show({ message: errorMessage(err) }); } };
   const unitLabel = item.unit.abbreviation ?? item.unit.pluralName ?? item.unit.name;
@@ -76,13 +121,13 @@ export function ItemDetail() {
       <section className="card space-y-2">
         <h2 className="font-medium">History</h2>
         <ul className="divide-y divide-slate-100 text-sm">
-          {events?.events.map((e) => (
+          {rows.map((e) => (
             <li key={e.id} className="flex justify-between gap-2 py-2">
               <span>{EVENT_LABEL[e.eventType]} {e.eventType === 'adjust' && e.quantity > 0 ? '+' : ''}{formatQty(e.quantity, item.unit)}{e.note ? ` · ${e.note}` : ''}</span>
               <span className="whitespace-nowrap text-slate-500">{e.userName ?? 'auto'} · {new Date(e.createdAt).toLocaleDateString()}</span>
             </li>
           ))}
-          {events?.events.length === 0 && <li className="py-2 text-slate-500">No history yet.</li>}
+          {history.key !== '' && rows.length === 0 && <li className="py-2 text-slate-500">No history yet.</li>}
         </ul>
         {events?.nextCursor && <button className="btn-ghost w-full" onClick={() => setCursor(events.nextCursor!)}>Older</button>}
       </section>
@@ -111,7 +156,14 @@ export function ItemDetail() {
       </section>
 
       <QtyDialog open={adjustOpen} title={`How many ${item.name} are there really?`} initial={item.currentCount} unitLabel={unitLabel} allowNegative
-        onConfirm={(n) => run(() => adjust({ hid, itemId: id, newCount: n }).unwrap())} onClose={() => setAdjustOpen(false)} />
+        onConfirm={(n) => run(async () => {
+          const { eventId } = await adjust({ hid, itemId: id, newCount: n }).unwrap();
+          toast.show({
+            message: `Set to ${formatQty(n, item.unit)} · ${item.name}`,
+            ...(eventId ? { actionLabel: 'Undo', onAction: () => { undo({ hid, eventId }).unwrap().catch((err) => toast.show({ message: errorMessage(err) })); } } : {}),
+            durationMs: 6000,
+          });
+        })} onClose={() => setAdjustOpen(false)} />
     </div>
   );
 }

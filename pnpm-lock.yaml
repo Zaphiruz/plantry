@@ -114,6 +114,9 @@ importers:
       workbox-routing:
         specifier: ^7.3.0
         version: 7.4.1
+      workbox-window:
+        specifier: ^7.4.1
+        version: 7.4.1
     devDependencies:
       '@playwright/test':
         specifier: ^1.48.2

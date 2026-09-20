@@ -7,6 +7,10 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      // main.tsx registers the worker itself (and reloads once when a new one takes control),
+      // so there must be no second, implicit registration script injected into index.html.
+      // It also keeps dist/index.html free of inline <script>, which the CSP forbids.
+      injectRegister: false,
       strategies: 'injectManifest',
       srcDir: 'src',
       filename: 'sw.ts',
