@@ -10,8 +10,8 @@ import { ToastProvider } from '../components/Toast';
 import { ItemForm } from './ItemForm';
 
 const units = [
-  { id: 'u-each', name: 'each', pluralName: null, abbreviation: null, global: true },
-  { id: 'u-other', name: 'bag', pluralName: 'bags', abbreviation: null, global: false },
+  { id: 'u-each', name: 'each', pluralName: null, abbreviation: null, global: true, step: 1 },
+  { id: 'u-other', name: 'bag', pluralName: 'bags', abbreviation: null, global: false, step: 6 },
 ];
 
 const baseItem = {
@@ -58,6 +58,83 @@ describe('ItemForm new-item defaults', () => {
     expect(await screen.findByDisplayValue('123')).toBeInTheDocument();
     const unitSelect = (await screen.findByRole('combobox', { name: 'Unit' })) as HTMLSelectElement;
     await vi.waitFor(() => expect(unitSelect.value).toBe('u-each'));
+  });
+
+  it('defaults "Usually buy" to the selected unit\'s step, and updates it when the unit changes (until hand-edited)', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const u = url(input);
+      if (u.includes('/units')) return json(units);
+      if (u.includes('/stores')) return json([]);
+      return json(null);
+    });
+    renderForm('/h/h1/items/new', '/h/:hid/items/new', fetchMock);
+    const restock = (await screen.findByLabelText('Usually buy')) as HTMLInputElement;
+    await vi.waitFor(() => expect(restock.value).toBe('1'));
+
+    const unitSelect = (await screen.findByRole('combobox', { name: 'Unit' })) as HTMLSelectElement;
+    await vi.waitFor(() => expect(unitSelect.options.length).toBe(2));
+    await userEvent.selectOptions(unitSelect, 'u-other');
+    await vi.waitFor(() => expect(restock.value).toBe('6'));
+  });
+
+  it('stops auto-updating "Usually buy" once the user has typed into it', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const u = url(input);
+      if (u.includes('/units')) return json(units);
+      if (u.includes('/stores')) return json([]);
+      return json(null);
+    });
+    renderForm('/h/h1/items/new', '/h/:hid/items/new', fetchMock);
+    const restock = (await screen.findByLabelText('Usually buy')) as HTMLInputElement;
+    await vi.waitFor(() => expect(restock.value).toBe('1'));
+    await userEvent.clear(restock);
+    await userEvent.type(restock, '3');
+
+    const unitSelect = (await screen.findByRole('combobox', { name: 'Unit' })) as HTMLSelectElement;
+    await vi.waitFor(() => expect(unitSelect.options.length).toBe(2));
+    await userEvent.selectOptions(unitSelect, 'u-other');
+    expect(restock.value).toBe('3');
+  });
+});
+
+describe('ItemForm manual validation', () => {
+  it('rejects a negative "Minimum to keep" with an inline error and never submits', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const u = url(input);
+      if (u.includes('/units')) return json(units);
+      if (u.includes('/stores')) return json([]);
+      return json(null);
+    });
+    renderForm('/h/h1/items/new', '/h/:hid/items/new', fetchMock);
+    await userEvent.type(await screen.findByLabelText('Name'), 'Cat food');
+    const min = await screen.findByLabelText('Minimum to keep');
+    await userEvent.clear(min);
+    await userEvent.type(min, '-1');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Minimum to keep/);
+    expect(fetchMock.mock.calls.some((c) => url(c[0]).includes('/items') && (c[0] as Request).method === 'POST')).toBe(false);
+  });
+
+  it('accepts a valid off-step "Usually buy" value (mirrors the server: any positive value with <=3dp)', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const u = url(input);
+      if (u.includes('/units')) return json(units);
+      if (u.includes('/stores')) return json([]);
+      if (u.includes('/items') && (input as Request).method === 'POST') return json({ id: 'new1' });
+      return json(null);
+    });
+    renderForm('/h/h1/items/new', '/h/:hid/items/new', fetchMock);
+    await userEvent.type(await screen.findByLabelText('Name'), 'Cat food');
+    const restock = await screen.findByLabelText('Usually buy');
+    await userEvent.clear(restock);
+    await userEvent.type(restock, '1.5');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await vi.waitFor(() => {
+      const created = fetchMock.mock.calls.map((c) => c[0] as Request).find((r) => r.url.includes('/items') && r.method === 'POST');
+      expect(created).toBeDefined();
+    });
   });
 });
 

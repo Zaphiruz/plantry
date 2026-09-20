@@ -8,7 +8,7 @@ import { makeStore } from '../store';
 import { ToastProvider } from '../components/Toast';
 import { Shopping } from './Shopping';
 
-const unit: UnitDto = { id: 'u1', name: 'unit', pluralName: 'units', abbreviation: null, global: true };
+const unit: UnitDto = { id: 'u1', name: 'unit', pluralName: 'units', abbreviation: null, global: true, step: 1 };
 
 const list: ShoppingListDto = {
   groups: [

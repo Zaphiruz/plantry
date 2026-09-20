@@ -44,7 +44,7 @@ function ItemEntryRow({ hid, entry }: { hid: string; entry: ItemEntry }) {
         {entry.low && <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">low</span>}
         {entry.manual && <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800">added</span>}
       </button>
-      <QtyDialog open={open} title={`How many ${entry.name}?`} initial={entry.quantity} unitLabel={entry.unit.abbreviation ?? entry.unit.pluralName ?? entry.unit.name}
+      <QtyDialog open={open} title={`How many ${entry.name}?`} initial={entry.quantity} step={entry.unit.step} unitLabel={entry.unit.abbreviation ?? entry.unit.pluralName ?? entry.unit.name}
         onConfirm={(n) => void buy(n)} onClose={() => setOpen(false)} />
     </li>
   );

@@ -34,7 +34,7 @@ export function Inventory() {
   const quick = async (kind: 'restock' | 'consume') => {
     if (!match || quickBusy.current) return;
     quickBusy.current = true;
-    const quantity = kind === 'restock' ? match.defaultRestockQty : 1;
+    const quantity = kind === 'restock' ? match.defaultRestockQty : match.unit.step;
     try { await (kind === 'restock' ? restock : consume)({ hid, itemId: match.id, quantity }).unwrap(); toast.show({ message: `${kind === 'restock' ? 'Added' : 'Used'} ${formatQty(quantity, match.unit)} · ${match.name}` }); }
     catch (err) { toast.show({ message: errorMessage(err) }); }
     quickBusy.current = false;
@@ -71,7 +71,7 @@ export function Inventory() {
             <Dialog.Title className="text-lg font-semibold">{match?.name}</Dialog.Title>
             <Dialog.Description className="text-slate-500">{match && `Have ${formatQty(match.currentCount, match.unit)}`}</Dialog.Description>
             <button className="btn-primary w-full" onClick={() => void quick('restock')}>Restock {match && formatQty(match.defaultRestockQty, match.unit)}</button>
-            <button className="btn-ghost w-full" onClick={() => void quick('consume')}>Use 1</button>
+            <button className="btn-ghost w-full" onClick={() => void quick('consume')}>Use {match && formatQty(match.unit.step, match.unit)}</button>
             <button className="btn-ghost w-full" onClick={() => { if (match) navigate(`/h/${hid}/items/${match.id}`); }}>Open item</button>
           </Dialog.Content>
         </Dialog.Portal>

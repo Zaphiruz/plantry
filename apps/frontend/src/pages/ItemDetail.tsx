@@ -155,7 +155,7 @@ export function ItemDetail() {
         )}
       </section>
 
-      <QtyDialog open={adjustOpen} title={`How many ${item.name} are there really?`} initial={item.currentCount} unitLabel={unitLabel} allowNegative
+      <QtyDialog open={adjustOpen} title={`How many ${item.name} are there really?`} initial={item.currentCount} step={item.unit.step} unitLabel={unitLabel} allowNegative
         onConfirm={(n) => run(async () => {
           const { eventId } = await adjust({ hid, itemId: id, newCount: n }).unwrap();
           toast.show({

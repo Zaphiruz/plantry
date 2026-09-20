@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { UnitDto } from '@plantry/shared';
 import { defaultWindowFor, errorMessage, formatQty } from './format';
 
-const unit = (p: Partial<UnitDto>): UnitDto => ({ id: 'u', name: 'can', pluralName: 'cans', abbreviation: null, global: true, ...p });
+const unit = (p: Partial<UnitDto>): UnitDto => ({ id: 'u', name: 'can', pluralName: 'cans', abbreviation: null, global: true, step: 1, ...p });
 
 describe('formatQty', () => {
   it('pluralises, prefers abbreviations, trims trailing zeros', () => {

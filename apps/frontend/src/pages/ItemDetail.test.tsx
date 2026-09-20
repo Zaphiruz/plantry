@@ -8,7 +8,7 @@ import { makeStore } from '../store';
 import { ToastProvider } from '../components/Toast';
 import { ItemDetail } from './ItemDetail';
 
-const unit: UnitDto = { id: 'u1', name: 'unit', pluralName: 'units', abbreviation: null, global: true };
+const unit: UnitDto = { id: 'u1', name: 'unit', pluralName: 'units', abbreviation: null, global: true, step: 1 };
 const item = {
   id: 'i1', name: 'Rice', description: null, category: null, unit, preferredStoreId: null, barcode: null,
   currentCount: 3, minStock: 1, low: false, defaultRestockQty: 1, renotifyAfterDays: 3,

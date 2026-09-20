@@ -54,7 +54,8 @@ export const api = createApi({
     deleteStore: b.mutation<void, Hid & { id: string }>({ query: ({ hid, id }) => ({ url: `${h(hid)}/stores/${id}`, method: 'DELETE' }), invalidatesTags: ['Stores', 'Items', 'Shopping'] }),
 
     getUnits: b.query<UnitDto[], string>({ query: (hid) => `${h(hid)}/units`, providesTags: ['Units'] }),
-    createUnit: b.mutation<UnitDto, Hid & { name: string; pluralName?: string | null; abbreviation?: string | null }>({ query: ({ hid, ...body }) => ({ url: `${h(hid)}/units`, method: 'POST', body }), invalidatesTags: ['Units'] }),
+    createUnit: b.mutation<UnitDto, Hid & { name: string; pluralName?: string | null; abbreviation?: string | null; step?: number }>({ query: ({ hid, ...body }) => ({ url: `${h(hid)}/units`, method: 'POST', body }), invalidatesTags: ['Units'] }),
+    updateUnit: b.mutation<UnitDto, Hid & { id: string; name?: string; pluralName?: string | null; abbreviation?: string | null; step?: number }>({ query: ({ hid, id, ...body }) => ({ url: `${h(hid)}/units/${id}`, method: 'PATCH', body }), invalidatesTags: ['Units', 'Items', 'Shopping'] }),
     deleteUnit: b.mutation<void, Hid & { id: string }>({ query: ({ hid, id }) => ({ url: `${h(hid)}/units/${id}`, method: 'DELETE' }), invalidatesTags: ['Units', 'Items'] }),
 
     getInventory: b.query<ItemDto[], string>({ query: (hid) => `${h(hid)}/inventory`, providesTags: ['Items'] }),
@@ -128,7 +129,7 @@ export const {
   useGetMeQuery, useLogoutMutation, useCreateHouseholdMutation, useAcceptInviteMutation, useRenameHouseholdMutation,
   useGetMembersQuery, useSetMemberRoleMutation, useRemoveMemberMutation, useLeaveHouseholdMutation, useCreateInviteMutation,
   useGetStoresQuery, useCreateStoreMutation, useUpdateStoreMutation, useDeleteStoreMutation,
-  useGetUnitsQuery, useCreateUnitMutation, useDeleteUnitMutation,
+  useGetUnitsQuery, useCreateUnitMutation, useUpdateUnitMutation, useDeleteUnitMutation,
   useGetInventoryQuery, useGetArchivedItemsQuery, useLazyFindByBarcodeQuery, useGetItemQuery, useCreateItemMutation, useUpdateItemMutation,
   useArchiveItemMutation, useUnarchiveItemMutation, useDeleteItemMutation, useConsolidateMutation,
   useRestockMutation, useConsumeMutation, useAdjustMutation, useUndoEventMutation, useGetEventsQuery, useGetRateQuery,

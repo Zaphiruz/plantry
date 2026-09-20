@@ -28,8 +28,9 @@ export function ItemRow({ hid, item }: { hid: string; item: ItemDto }) {
       });
     } catch (err) { toast.show({ message: errorMessage(err) }); }
   };
-  const minus = useLongPress(() => setDialog('consume'), () => void act('consume', 1));
-  const plus = useLongPress(() => setDialog('restock'), () => void act('restock', 1));
+  const step = item.unit.step;
+  const minus = useLongPress(() => setDialog('consume'), () => void act('consume', step));
+  const plus = useLongPress(() => setDialog('restock'), () => void act('restock', step));
   const toggleTrip = async () => {
     try {
       if (item.nextTripRowId) await removeRow({ hid, id: item.nextTripRowId }).unwrap();
@@ -52,10 +53,10 @@ export function ItemRow({ hid, item }: { hid: string; item: ItemDto }) {
       </Link>
       <button type="button" aria-label={item.nextTripRowId ? `Remove ${item.name} from next trip` : `Add ${item.name} to next trip`} aria-pressed={!!item.nextTripRowId}
         className={`min-h-11 min-w-11 rounded-lg text-xl ${item.nextTripRowId ? 'bg-green-100 text-green-800' : 'text-slate-400'}`} onClick={toggleTrip}>🛒</button>
-      <button type="button" aria-label={`Use 1 ${item.name}`} className="btn-ghost min-w-11 touch-manipulation px-0 text-xl" {...minus}>−</button>
-      <button type="button" aria-label={`Add 1 ${item.name}`} className="btn-ghost min-w-11 touch-manipulation px-0 text-xl" {...plus}>+</button>
+      <button type="button" aria-label={`Use ${formatQty(step, item.unit)} ${item.name}`} className="btn-ghost min-w-11 touch-manipulation px-0 text-xl" {...minus}>−</button>
+      <button type="button" aria-label={`Add ${formatQty(step, item.unit)} ${item.name}`} className="btn-ghost min-w-11 touch-manipulation px-0 text-xl" {...plus}>+</button>
       <QtyDialog open={dialog !== null} title={dialog === 'consume' ? `Use ${item.name}` : `Restock ${item.name}`}
-        initial={dialog === 'restock' ? item.defaultRestockQty : 1} unitLabel={unitLabel}
+        initial={dialog === 'restock' ? item.defaultRestockQty : step} step={step} unitLabel={unitLabel}
         onConfirm={(n) => dialog && void act(dialog, n)} onClose={() => setDialog(null)} />
     </li>
   );

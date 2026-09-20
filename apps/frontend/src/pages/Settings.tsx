@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import type { UnitDto } from '@plantry/shared';
 import {
   useCreateInviteMutation, useCreateStoreMutation, useCreateUnitMutation, useDeleteStoreMutation, useDeleteUnitMutation, useGetArchivedItemsQuery,
   useGetMeQuery, useGetMembersQuery, useGetMyFeedbackQuery, useGetStoresQuery, useGetUnitsQuery, useGetVapidKeyQuery, useLeaveHouseholdMutation,
   useLogoutMutation, usePushSubscribeMutation, usePushUnsubscribeMutation, useRemoveMemberMutation, useRenameHouseholdMutation,
-  useSendFeedbackMutation, useSetMemberRoleMutation, useUnarchiveItemMutation,
+  useSendFeedbackMutation, useSetMemberRoleMutation, useUnarchiveItemMutation, useUpdateUnitMutation,
 } from '../api';
 import { useToast } from '../components/Toast';
 import { errorMessage } from '../lib/format';
@@ -13,6 +14,45 @@ import { currentSubscription, needsIosInstall, pushSupported, subscribePush, uns
 const Section = ({ title, children }: { title: string; children: React.ReactNode }) => (
   <section className="card space-y-3"><h2 className="font-semibold">{title}</h2>{children}</section>
 );
+
+/** Inline step editor: hydrates from the server value once per unit, saves on blur/Enter, and
+ * guards against a double submit (e.g. blur firing right after Enter). */
+function UnitStepEditor({ hid, unit, onError }: { hid: string; unit: UnitDto; onError(msg: string): void }) {
+  const [updateUnit] = useUpdateUnitMutation();
+  const [value, setValue] = useState(String(unit.step));
+  const hydratedFor = useRef<string | null>(null);
+  const savingRef = useRef(false);
+  useEffect(() => {
+    if (hydratedFor.current === unit.id) return;
+    hydratedFor.current = unit.id;
+    setValue(String(unit.step));
+  }, [unit.id, unit.step]);
+
+  const save = async () => {
+    if (savingRef.current) return;
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0.01 || n === unit.step) { setValue(String(unit.step)); return; }
+    savingRef.current = true;
+    try { await updateUnit({ hid, id: unit.id, step: n }).unwrap(); }
+    catch (err) { setValue(String(unit.step)); onError(errorMessage(err)); }
+    finally { savingRef.current = false; }
+  };
+
+  return (
+    <input
+      className="input w-20"
+      type="number"
+      inputMode="decimal"
+      step={0.01}
+      min={0.01}
+      aria-label={`Step for ${unit.name}`}
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
+      onBlur={() => void save()}
+      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); } }}
+    />
+  );
+}
 
 export function Settings() {
   const { hid = '' } = useParams();
@@ -50,7 +90,7 @@ export function Settings() {
   const { data: stores } = useGetStoresQuery(hid); const [createStore, createStoreState] = useCreateStoreMutation(); const [deleteStore] = useDeleteStoreMutation();
   const { data: units } = useGetUnitsQuery(hid); const [createUnit, createUnitState] = useCreateUnitMutation(); const [deleteUnit] = useDeleteUnitMutation();
   const { data: archived } = useGetArchivedItemsQuery(hid); const [unarchive] = useUnarchiveItemMutation();
-  const [storeName, setStoreName] = useState(''); const [unitName, setUnitName] = useState(''); const [unitPlural, setUnitPlural] = useState('');
+  const [storeName, setStoreName] = useState(''); const [unitName, setUnitName] = useState(''); const [unitPlural, setUnitPlural] = useState(''); const [unitStep, setUnitStep] = useState('1');
 
   // --- notifications
   const { data: vapid } = useGetVapidKeyQuery(undefined, { skip: !me?.pushEnabled });
@@ -102,11 +142,26 @@ export function Settings() {
 
       <Section title="Custom units">
         <ul className="divide-y divide-slate-100">{units?.filter((u) => !u.global).map((u) => (
-          <li key={u.id} className="flex items-center justify-between py-1"><span>{u.name}{u.pluralName ? ` / ${u.pluralName}` : ''}</span>
-            <button aria-label={`Delete ${u.name}`} className="min-h-11 min-w-11 text-slate-400" onClick={() => run(() => deleteUnit({ hid, id: u.id }).unwrap())}>✕</button></li>))}</ul>
-        <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); void guardedRun('addUnit', async () => { await createUnit({ hid, name: unitName, pluralName: unitPlural || null }).unwrap(); setUnitName(''); setUnitPlural(''); }); }}>
+          <li key={u.id} className="flex items-center justify-between gap-2 py-1">
+            <span className="min-w-0 flex-1 truncate">{u.name}{u.pluralName ? ` / ${u.pluralName}` : ''}</span>
+            <label className="flex items-center gap-1 text-sm text-slate-500">step
+              <UnitStepEditor hid={hid} unit={u} onError={(msg) => toast.show({ message: msg })} />
+            </label>
+            <button aria-label={`Delete ${u.name}`} className="min-h-11 min-w-11 text-slate-400" onClick={() => run(() => deleteUnit({ hid, id: u.id }).unwrap())}>✕</button>
+          </li>))}</ul>
+        <form className="flex flex-wrap gap-2" onSubmit={(e) => {
+          e.preventDefault();
+          void guardedRun('addUnit', async () => {
+            const step = Number(unitStep);
+            await createUnit({ hid, name: unitName, pluralName: unitPlural || null, step: Number.isFinite(step) ? step : undefined }).unwrap();
+            setUnitName(''); setUnitPlural(''); setUnitStep('1');
+          });
+        }}>
           <input className="input" placeholder="sleeve" value={unitName} onChange={(e) => setUnitName(e.target.value)} required maxLength={40} aria-label="Unit name" />
-          <input className="input" placeholder="sleeves" value={unitPlural} onChange={(e) => setUnitPlural(e.target.value)} maxLength={40} aria-label="Plural" /><button className="btn-ghost" disabled={createUnitState.isLoading}>Add</button></form>
+          <input className="input" placeholder="sleeves" value={unitPlural} onChange={(e) => setUnitPlural(e.target.value)} maxLength={40} aria-label="Plural" />
+          <input className="input w-20" type="number" inputMode="decimal" step={0.01} min={0.01} placeholder="1" value={unitStep} onChange={(e) => setUnitStep(e.target.value)} aria-label="Step" />
+          <button className="btn-ghost" disabled={createUnitState.isLoading}>Add</button>
+        </form>
         <p className="text-sm text-slate-500">Built-in units (each, oz, lb, can…) are always available.</p>
       </Section>
 
