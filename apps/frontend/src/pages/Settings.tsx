@@ -15,26 +15,48 @@ const Section = ({ title, children }: { title: string; children: React.ReactNode
   <section className="card space-y-3"><h2 className="font-semibold">{title}</h2>{children}</section>
 );
 
-/** Inline step editor: hydrates from the server value once per unit, saves on blur/Enter, and
- * guards against a double submit (e.g. blur firing right after Enter). */
+const twoDp = (n: number) => Math.abs(n * 100 - Math.round(n * 100)) < 1e-6;
+const isValidStep = (n: number) => Number.isFinite(n) && n >= 0.01 && twoDp(n);
+
+/**
+ * Inline step editor. Hydrates from the server value once per unit id, and re-syncs from
+ * `unit.step` whenever the field is idle (not focused, not hand-edited) — e.g. a background
+ * refetch (refetchOnFocus) picking up a change made on another device. `dirtyRef` tracks a
+ * real, unsaved edit: it's what makes `save()` a no-op on a plain focus+blur, so an idle field
+ * showing a value it never PATCHed can't write that value back over a newer server value.
+ * Saves on blur/Enter, and guards against a double submit (e.g. blur firing right after Enter).
+ */
 function UnitStepEditor({ hid, unit, onError }: { hid: string; unit: UnitDto; onError(msg: string): void }) {
   const [updateUnit] = useUpdateUnitMutation();
   const [value, setValue] = useState(String(unit.step));
   const hydratedFor = useRef<string | null>(null);
+  const dirtyRef = useRef(false);
+  const focusedRef = useRef(false);
   const savingRef = useRef(false);
+
   useEffect(() => {
-    if (hydratedFor.current === unit.id) return;
-    hydratedFor.current = unit.id;
-    setValue(String(unit.step));
+    if (hydratedFor.current !== unit.id) {
+      hydratedFor.current = unit.id;
+      dirtyRef.current = false;
+      setValue(String(unit.step));
+      return;
+    }
+    if (!focusedRef.current && !dirtyRef.current) setValue(String(unit.step));
   }, [unit.id, unit.step]);
 
   const save = async () => {
-    if (savingRef.current) return;
+    if (savingRef.current || !dirtyRef.current) return;
     const n = Number(value);
-    if (!Number.isFinite(n) || n < 0.01 || n === unit.step) { setValue(String(unit.step)); return; }
+    if (!isValidStep(n)) {
+      dirtyRef.current = false;
+      setValue(String(unit.step));
+      onError('Step must be a number of at least 0.01, with at most 2 decimal places');
+      return;
+    }
+    if (n === unit.step) { dirtyRef.current = false; return; }
     savingRef.current = true;
-    try { await updateUnit({ hid, id: unit.id, step: n }).unwrap(); }
-    catch (err) { setValue(String(unit.step)); onError(errorMessage(err)); }
+    try { await updateUnit({ hid, id: unit.id, step: n }).unwrap(); dirtyRef.current = false; }
+    catch (err) { dirtyRef.current = false; setValue(String(unit.step)); onError(errorMessage(err)); }
     finally { savingRef.current = false; }
   };
 
@@ -47,8 +69,15 @@ function UnitStepEditor({ hid, unit, onError }: { hid: string; unit: UnitDto; on
       min={0.01}
       aria-label={`Step for ${unit.name}`}
       value={value}
-      onChange={(e) => setValue(e.target.value)}
-      onBlur={() => void save()}
+      onChange={(e) => { dirtyRef.current = true; setValue(e.target.value); }}
+      onFocus={() => { focusedRef.current = true; }}
+      onBlur={() => {
+        focusedRef.current = false;
+        // Idle (never hand-edited): track server truth instead of firing a no-op save, which
+        // matters if a background refetch changed unit.step while this field was focused.
+        if (!dirtyRef.current) { setValue(String(unit.step)); return; }
+        void save();
+      }}
       onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); } }}
     />
   );
@@ -149,15 +178,21 @@ export function Settings() {
             </label>
             <button aria-label={`Delete ${u.name}`} className="min-h-11 min-w-11 text-slate-400" onClick={() => run(() => deleteUnit({ hid, id: u.id }).unwrap())}>✕</button>
           </li>))}</ul>
-        <form className="flex flex-wrap gap-2" onSubmit={(e) => {
+        <form className="flex flex-wrap gap-2" noValidate onSubmit={(e) => {
           e.preventDefault();
+          if (!unitName.trim()) { toast.show({ message: 'Unit name is required' }); return; }
+          let step: number | undefined;
+          if (unitStep.trim() !== '') {
+            const n = Number(unitStep);
+            if (!isValidStep(n)) { toast.show({ message: 'Step must be a number of at least 0.01, with at most 2 decimal places' }); return; }
+            step = n;
+          }
           void guardedRun('addUnit', async () => {
-            const step = Number(unitStep);
-            await createUnit({ hid, name: unitName, pluralName: unitPlural || null, step: Number.isFinite(step) ? step : undefined }).unwrap();
+            await createUnit({ hid, name: unitName, pluralName: unitPlural || null, ...(step !== undefined ? { step } : {}) }).unwrap();
             setUnitName(''); setUnitPlural(''); setUnitStep('1');
           });
         }}>
-          <input className="input" placeholder="sleeve" value={unitName} onChange={(e) => setUnitName(e.target.value)} required maxLength={40} aria-label="Unit name" />
+          <input className="input" placeholder="sleeve" value={unitName} onChange={(e) => setUnitName(e.target.value)} maxLength={40} aria-label="Unit name" />
           <input className="input" placeholder="sleeves" value={unitPlural} onChange={(e) => setUnitPlural(e.target.value)} maxLength={40} aria-label="Plural" />
           <input className="input w-20" type="number" inputMode="decimal" step={0.01} min={0.01} placeholder="1" value={unitStep} onChange={(e) => setUnitStep(e.target.value)} aria-label="Step" />
           <button className="btn-ghost" disabled={createUnitState.isLoading}>Add</button>
