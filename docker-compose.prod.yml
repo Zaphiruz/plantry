@@ -1,0 +1,23 @@
+services:
+  backend:
+    build: { context: ., dockerfile: apps/backend/Dockerfile }
+    image: plantry-backend:latest
+    restart: unless-stopped
+    env_file: .env            # VAULT_ADDR + VAULT_TOKEN only; everything else comes from Vault at start
+    environment:
+      TZ: America/New_York
+      NODE_EXTRA_CA_CERTS: /etc/ssl/extra/cloudflare-ca.crt
+    volumes:
+      - /usr/local/share/ca-certificates/cloudflare-origin-ca.crt:/etc/ssl/extra/cloudflare-ca.crt:ro
+    networks: [default, shared-db]
+
+  frontend:
+    build: { context: ., dockerfile: apps/frontend/Dockerfile }
+    image: plantry-frontend:latest
+    restart: unless-stopped
+    depends_on: [backend]
+    ports: ["3007:80"]
+
+networks:
+  shared-db:
+    external: true

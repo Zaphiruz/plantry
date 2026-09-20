@@ -1,0 +1,20 @@
+import { spawn } from 'node:child_process';
+
+const { VAULT_ADDR, VAULT_TOKEN } = process.env;
+if (!VAULT_ADDR || !VAULT_TOKEN) {
+  console.error('[entrypoint] VAULT_ADDR and VAULT_TOKEN must be set');
+  process.exit(1);
+}
+console.log('[entrypoint] Fetching secrets from Vault...');
+const res = await fetch(`${VAULT_ADDR}/v1/secret/data/plantry`, { headers: { 'X-Vault-Token': VAULT_TOKEN } });
+if (!res.ok) {
+  console.error(`[entrypoint] Vault responded ${res.status}: ${await res.text()}`);
+  process.exit(1);
+}
+const { data: { data: secrets } } = await res.json();
+Object.assign(process.env, secrets);
+console.log('[entrypoint] Secrets loaded, starting server...');
+
+const child = spawn(process.execPath, ['apps/backend/dist/server.js'], { stdio: 'inherit', env: process.env });
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => child.kill(sig));
+child.on('exit', (code) => process.exit(code ?? 0));

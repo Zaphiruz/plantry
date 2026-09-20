@@ -1,0 +1,49 @@
+name: Deploy
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency: { group: deploy, cancel-in-progress: false }
+
+jobs:
+  deploy:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: self-hosted
+    defaults: { run: { working-directory: /opt/plantry } }
+    steps:
+      - name: Pull latest code
+        run: git pull --ff-only
+
+      - name: Build images
+        run: |
+          set -e
+          for i in 1 2 3; do
+            if docker compose -f docker-compose.prod.yml build backend frontend; then exit 0; fi
+            echo "Attempt $i failed, retrying..."; sleep 10
+          done
+          echo "Build failed after 3 attempts."; exit 1
+
+      - name: Run migrations (before the new code starts)
+        run: |
+          source .env
+          DB_URL=$(curl -sf -H "X-Vault-Token: $VAULT_TOKEN" "$VAULT_ADDR/v1/secret/data/plantry" \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['data']['data']['DATABASE_URL'])")
+          docker compose -f docker-compose.prod.yml run --rm --no-deps -e DATABASE_URL="$DB_URL" backend \
+            apps/backend/node_modules/.bin/prisma migrate deploy --schema apps/backend/prisma/schema.prisma
+
+      - name: Deploy
+        run: docker compose -f docker-compose.prod.yml up -d
+
+      - name: Health check
+        run: |
+          for i in $(seq 1 20); do
+            if curl -sf http://localhost:3007/api/me -o /dev/null -w '%{http_code}' | grep -q 401; then echo healthy; exit 0; fi
+            sleep 3
+          done
+          docker compose -f docker-compose.prod.yml logs --tail 80 backend; exit 1
+
+      - name: Prune dangling images (S2 has a 64 GB disk)
+        run: docker image prune -f

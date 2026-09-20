@@ -1,0 +1,17 @@
+:80 {
+  encode gzip zstd
+
+  handle /api/* {
+    reverse_proxy backend:3000
+  }
+
+  # Service worker + manifest must never be cached, or clients get stuck on old builds.
+  @nocache path /sw.js /manifest.webmanifest /index.html
+  header @nocache Cache-Control "no-cache"
+
+  handle {
+    root * /srv
+    try_files {path} /index.html
+    file_server
+  }
+}
