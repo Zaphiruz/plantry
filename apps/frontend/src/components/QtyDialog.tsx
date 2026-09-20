@@ -19,13 +19,25 @@ export function QtyDialog({ open, title, initial, step, unitLabel, allowNegative
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   const n = Number(value);
   const valid = value.trim() !== '' && Number.isFinite(n) && threeDp(n) && (allowNegative ? true : n >= 0.01);
+  const hint = (): string | null => {
+    if (valid) return null;
+    if (value.trim() === '') return 'Enter a quantity.';
+    if (!Number.isFinite(n)) return 'Enter a valid number.';
+    if (!threeDp(n)) return 'At most 3 decimal places.';
+    return 'Must be at least 0.01.';
+  };
 
   const nudge = (delta: number) => {
     const current = Number(value);
     const base = Number.isFinite(current) ? current : 0;
-    let next = round3(base + delta);
-    if (!allowNegative) next = Math.max(next, step);
-    setValue(String(next));
+    if (delta < 0 && !allowNegative) {
+      // Never go below 0.01, and never move the value upward: a decrease that would cross
+      // below the floor just holds at the current value rather than snapping up to it.
+      const next = round3(base + delta);
+      setValue(String(next < 0.01 ? base : next));
+      return;
+    }
+    setValue(String(round3(base + delta)));
   };
 
   return (
@@ -44,6 +56,7 @@ export function QtyDialog({ open, title, initial, step, unitLabel, allowNegative
               </label>
               <button type="button" aria-label="Increase" className="btn-ghost min-h-11 min-w-11 text-xl" onClick={() => nudge(step)}>+</button>
             </div>
+            {!valid && <p role="alert" className="text-sm text-red-700">{hint()}</p>}
             <div className="flex gap-2">
               <button type="button" className="btn-ghost flex-1" onClick={onClose}>Cancel</button>
               <button className="btn-primary flex-1" disabled={!valid}>OK</button>

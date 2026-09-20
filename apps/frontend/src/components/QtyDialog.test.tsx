@@ -55,6 +55,15 @@ describe('QtyDialog stepper buttons', () => {
     expect(input).toHaveValue(8);
   });
 
+  it('Decrease on a sub-step value stays put instead of jumping up to the step (2, step 8)', async () => {
+    renderDialog(true, 2, 8);
+    const input = screen.getByLabelText('Quantity');
+    await userEvent.click(screen.getByRole('button', { name: 'Decrease' }));
+    expect(input).toHaveValue(2);
+    await userEvent.click(screen.getByRole('button', { name: 'Increase' }));
+    expect(input).toHaveValue(10);
+  });
+
   it('ten increases at step 0.1 accumulate without float drift', async () => {
     renderDialog(true, 0.1, 0.1);
     const input = screen.getByLabelText('Quantity');
@@ -93,5 +102,15 @@ describe('QtyDialog manual validation (noValidate)', () => {
     expect(screen.getByRole('button', { name: 'OK' })).toBeDisabled();
     await userEvent.clear(input);
     expect(screen.getByRole('button', { name: 'OK' })).toBeDisabled();
+  });
+
+  it('shows an inline reason (role=alert) when the value is invalid', async () => {
+    render(<QtyDialog open title="Use" initial={1} step={1} unitLabel="units" onConfirm={vi.fn()} onClose={vi.fn()} />);
+    const input = screen.getByLabelText('Quantity');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    await userEvent.clear(input);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/./);
+    await userEvent.type(input, '1.2345');
+    expect(await screen.findByRole('alert')).toHaveTextContent(/decimal/i);
   });
 });
