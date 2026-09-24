@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Provider } from 'react-redux';
@@ -8,9 +9,16 @@ import { makeStore } from '../store';
 import { ToastProvider } from '../components/Toast';
 import { ItemDetail } from './ItemDetail';
 
+vi.mock('../components/Scanner', () => ({
+  Scanner: ({ open, onDetected }: { open: boolean; onDetected: (code: string) => void }) => {
+    useEffect(() => { if (open) onDetected('999'); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+    return null;
+  },
+}));
+
 const unit: UnitDto = { id: 'u1', name: 'unit', pluralName: 'units', abbreviation: null, global: true, step: 1 };
 const item = {
-  id: 'i1', name: 'Rice', description: null, category: null, unit, preferredStoreId: null, barcode: null,
+  id: 'i1', name: 'Rice', description: null, category: null, unit, preferredStoreId: null, barcodes: [],
   currentCount: 3, minStock: 1, low: false, defaultRestockQty: 1, renotifyAfterDays: 3,
   autoDeductQty: null, autoDeductPeriodDays: 1, autoDeductPaused: false, archivedAt: null,
   photoUrl: null, thumbUrl: null, nextTripRowId: null,
@@ -107,6 +115,53 @@ describe('ItemDetail "Correct count"', () => {
     await correctTo('7');
 
     expect(await screen.findByText('Nope')).toBeInTheDocument();
+  });
+});
+
+describe('ItemDetail scan barcode', () => {
+  it('adds a newly scanned code via PATCH and toasts', async () => {
+    let patchedBody: unknown;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = u(input);
+      const method = input instanceof Request ? input.method : 'GET';
+      if (url.includes('/items?barcode=999')) return json([]);
+      if (url.includes('/events')) return json({ events: [], nextCursor: null });
+      if (url.includes('/inventory')) return json([item]);
+      if (url.includes('/me')) return json({ user: { sub: 'me', name: 'Me', isAdmin: false }, households: [] });
+      if (url.includes('/items/i1') && method === 'PATCH') {
+        patchedBody = JSON.parse(await (input as Request).text());
+        return json({ ...item, barcodes: ['999'] });
+      }
+      if (url.includes('/items/i1')) return json(item);
+      return json(null);
+    });
+    renderDetail(fetchMock);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Scan barcode' }));
+
+    expect(await screen.findByText('Barcode added')).toBeInTheDocument();
+    expect((patchedBody as { barcodes: string[] }).barcodes).toEqual(['999']);
+  });
+
+  it('does not PATCH when the code is already used by another active item', async () => {
+    let patched = false;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = u(input);
+      const method = input instanceof Request ? input.method : 'GET';
+      if (url.includes('/items?barcode=999')) return json([{ ...item, id: 'other', name: 'Beans' }]);
+      if (url.includes('/events')) return json({ events: [], nextCursor: null });
+      if (url.includes('/inventory')) return json([item]);
+      if (url.includes('/me')) return json({ user: { sub: 'me', name: 'Me', isAdmin: false }, households: [] });
+      if (url.includes('/items/i1') && method === 'PATCH') { patched = true; return json(item); }
+      if (url.includes('/items/i1')) return json(item);
+      return json(null);
+    });
+    renderDetail(fetchMock);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Scan barcode' }));
+
+    expect(await screen.findByText('Already used by Beans')).toBeInTheDocument();
+    expect(patched).toBe(false);
   });
 });
 

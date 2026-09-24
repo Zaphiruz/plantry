@@ -1,13 +1,15 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { RATE_WINDOWS, type EventDto, type RateWindow } from '@plantry/shared';
 import {
   useAddToListMutation, useAdjustMutation, useArchiveItemMutation, useConsolidateMutation, useDeleteItemMutation, useGetEventsQuery,
-  useGetInventoryQuery, useGetItemQuery, useGetMeQuery, useGetRateQuery, useRemoveListRowMutation, useUnarchiveItemMutation, useUndoEventMutation,
+  useGetInventoryQuery, useGetItemQuery, useGetMeQuery, useGetRateQuery, useLazyFindByBarcodeQuery, useRemoveListRowMutation,
+  useUnarchiveItemMutation, useUndoEventMutation, useUpdateItemMutation,
 } from '../api';
 import { PhotoPicker } from '../components/PhotoPicker';
 import { QtyDialog } from '../components/QtyDialog';
 import { QueryError } from '../components/QueryError';
+import { Scanner } from '../components/Scanner';
 import { useToast } from '../components/Toast';
 import { defaultWindowFor, errorMessage, formatQty } from '../lib/format';
 
@@ -62,7 +64,10 @@ export function ItemDetail() {
   const [archive] = useArchiveItemMutation(); const [unarchive] = useUnarchiveItemMutation();
   const [del] = useDeleteItemMutation(); const [consolidate] = useConsolidateMutation();
   const [addToList] = useAddToListMutation(); const [removeRow] = useRemoveListRowMutation();
+  const [updateItem] = useUpdateItemMutation(); const [findByBarcode] = useLazyFindByBarcodeQuery();
   const [adjustOpen, setAdjustOpen] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const scanBusy = useRef(false);
   const [mergeTarget, setMergeTarget] = useState(''); const [keepMin, setKeepMin] = useState<'target' | 'source'>('target');
 
   if (itemFailed && !item) {
@@ -80,6 +85,23 @@ export function ItemDetail() {
   const unitLabel = item.unit.abbreviation ?? item.unit.pluralName ?? item.unit.name;
   const archived = !!item.archivedAt;
 
+  const onScanned = (code: string) => {
+    setScanning(false);
+    if (scanBusy.current) return;
+    scanBusy.current = true;
+    void (async () => {
+      try {
+        if (item.barcodes.includes(code)) { toast.show({ message: 'Already on this item' }); return; }
+        const hits = await findByBarcode({ hid, barcode: code }).unwrap();
+        const owner = hits.find((h) => h.id !== item.id);
+        if (owner) { toast.show({ message: `Already used by ${owner.name}` }); return; }
+        await updateItem({ hid, id, body: { barcodes: [...item.barcodes, code] } }).unwrap();
+        toast.show({ message: 'Barcode added' });
+      } catch (err) { toast.show({ message: errorMessage(err) }); }
+      finally { scanBusy.current = false; }
+    })();
+  };
+
   return (
     <div className="space-y-4 p-4">
       <div className="flex items-start gap-3">
@@ -89,6 +111,7 @@ export function ItemDetail() {
           <p className={item.low ? 'font-semibold text-red-700' : 'text-slate-600'}>{formatQty(item.currentCount, item.unit)} · keep at least {formatQty(item.minStock, item.unit)}</p>
           {archived && <p className="text-sm font-medium text-amber-700">Archived</p>}
           {item.description && <p className="mt-1 text-sm text-slate-500">{item.description}</p>}
+          <p className="mt-1 font-mono text-xs text-slate-500">{item.barcodes.length > 0 ? item.barcodes.join(', ') : 'No barcodes'}</p>
         </div>
         {!archived && <Link className="btn-ghost" to="edit">Edit</Link>}
       </div>
@@ -100,6 +123,7 @@ export function ItemDetail() {
             onClick={() => run(() => item.nextTripRowId ? removeRow({ hid, id: item.nextTripRowId }).unwrap() : addToList({ hid, body: { itemId: item.id } }).unwrap())}>
             {item.nextTripRowId ? 'On next trip ✓' : 'Add to next trip'}
           </button>
+          <button className="btn-ghost" onClick={() => setScanning(true)}>Scan barcode</button>
         </div>
       )}
 
@@ -164,6 +188,7 @@ export function ItemDetail() {
             durationMs: 6000,
           });
         })} onClose={() => setAdjustOpen(false)} />
+      <Scanner open={scanning} onDetected={onScanned} onClose={() => setScanning(false)} />
     </div>
   );
 }

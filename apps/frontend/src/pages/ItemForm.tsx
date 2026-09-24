@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useCreateItemMutation, useGetItemQuery, useGetStoresQuery, useGetUnitsQuery, useUpdateItemMutation } from '../api';
+import { Scanner } from '../components/Scanner';
 import { useToast } from '../components/Toast';
 import { errorMessage } from '../lib/format';
 
 interface FormState {
-  name: string; description: string; category: string; unitId: string; preferredStoreId: string; barcode: string;
+  name: string; description: string; category: string; unitId: string; preferredStoreId: string; barcodes: string[];
   currentCount: string; minStock: string; defaultRestockQty: string; renotifyAfterDays: string;
   autoOn: boolean; autoQty: string; autoPeriod: string; autoPaused: boolean;
 }
 const EMPTY: FormState = {
-  name: '', description: '', category: '', unitId: '', preferredStoreId: '', barcode: '', currentCount: '0', minStock: '0',
+  name: '', description: '', category: '', unitId: '', preferredStoreId: '', barcodes: [], currentCount: '0', minStock: '0',
   defaultRestockQty: '1', renotifyAfterDays: '7', autoOn: false, autoQty: '1', autoPeriod: '1', autoPaused: false,
 };
 
@@ -27,13 +28,31 @@ export function ItemForm() {
   const { data: units } = useGetUnitsQuery(hid);
   const [createItem, createState] = useCreateItemMutation();
   const [updateItem, updateState] = useUpdateItemMutation();
-  const [f, setF] = useState<FormState>({ ...EMPTY, barcode: params.get('barcode') ?? '' });
+  const seedBarcode = params.get('barcode');
+  const [f, setF] = useState<FormState>({ ...EMPTY, barcodes: seedBarcode ? [seedBarcode] : [] });
   const [formError, setFormError] = useState<string | null>(null);
+  const [barcodeInput, setBarcodeInput] = useState('');
+  const [barcodeError, setBarcodeError] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
   const navigate = useNavigate();
   const toast = useToast();
   const set = <K extends keyof FormState>(k: K, v: FormState[K]) => setF((s) => ({ ...s, [k]: v }));
   const hydratedFor = useRef<string | null>(null);
   const restockTouched = useRef(false);
+
+  const addBarcode = (raw: string) => {
+    const code = raw.trim();
+    setBarcodeError(null);
+    if (!code) return;
+    if (f.barcodes.includes(code)) { setBarcodeError('This barcode is already on the list'); return; }
+    setF((s) => ({ ...s, barcodes: [...s.barcodes, code] }));
+    setBarcodeInput('');
+  };
+  const removeBarcode = (code: string) => setF((s) => ({ ...s, barcodes: s.barcodes.filter((c) => c !== code) }));
+  const onScanned = (code: string) => {
+    setScanning(false);
+    setF((s) => (s.barcodes.includes(code) ? s : { ...s, barcodes: [...s.barcodes, code] }));
+  };
   const selectedUnit = units?.find((u) => u.id === f.unitId);
   const unitStep = selectedUnit?.step ?? 1;
 
@@ -42,7 +61,7 @@ export function ItemForm() {
     hydratedFor.current = existing.id;
     setF({
       name: existing.name, description: existing.description ?? '', category: existing.category ?? '', unitId: existing.unit.id,
-      preferredStoreId: existing.preferredStoreId ?? '', barcode: existing.barcode ?? '', currentCount: String(existing.currentCount),
+      preferredStoreId: existing.preferredStoreId ?? '', barcodes: existing.barcodes, currentCount: String(existing.currentCount),
       minStock: String(existing.minStock), defaultRestockQty: String(existing.defaultRestockQty), renotifyAfterDays: String(existing.renotifyAfterDays),
       autoOn: existing.autoDeductQty !== null, autoQty: String(existing.autoDeductQty ?? 1), autoPeriod: String(existing.autoDeductPeriodDays),
       autoPaused: existing.autoDeductPaused,
@@ -88,7 +107,7 @@ export function ItemForm() {
     if (error) return;
     const common = {
       name: f.name, description: f.description || null, category: f.category || null, unitId: f.unitId,
-      preferredStoreId: f.preferredStoreId || null, barcode: f.barcode || null, minStock: Number(f.minStock),
+      preferredStoreId: f.preferredStoreId || null, barcodes: f.barcodes, minStock: Number(f.minStock),
       defaultRestockQty: Number(f.defaultRestockQty), renotifyAfterDays: Number(f.renotifyAfterDays),
       autoDeductQty: f.autoOn ? Number(f.autoQty) : null, autoDeductPeriodDays: Number(f.autoPeriod), autoDeductPaused: f.autoOn && f.autoPaused,
     };
@@ -127,7 +146,30 @@ export function ItemForm() {
         {num('renotifyAfterDays', 'Re-remind every (days)', { min: 1, max: 365, step: 1, inputMode: 'numeric' })}
       </div>
       <label className="block"><span className="label">Category</span><input className="input" value={f.category} onChange={(e) => set('category', e.target.value)} maxLength={60} placeholder="e.g. Pets" /></label>
-      <label className="block"><span className="label">Barcode</span><input className="input" value={f.barcode} onChange={(e) => set('barcode', e.target.value)} maxLength={64} inputMode="numeric" /></label>
+      <div className="space-y-2">
+        <span className="label">Barcodes</span>
+        {f.barcodes.length > 0 && (
+          <ul className="flex flex-wrap gap-2">
+            {f.barcodes.map((code) => (
+              <li key={code} className="flex min-h-11 items-center gap-1 rounded-full border border-slate-300 bg-white pl-3 pr-1 text-sm">
+                <span>{code}</span>
+                <button type="button" aria-label={`Remove barcode ${code}`} className="flex h-11 w-11 items-center justify-center text-slate-500" onClick={() => removeBarcode(code)}>✕</button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="flex gap-2">
+          <label className="flex-1"><span className="sr-only">Add barcode</span>
+            <input className="input" aria-label="Add barcode" inputMode="numeric" maxLength={64} value={barcodeInput}
+              onChange={(e) => setBarcodeInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addBarcode(barcodeInput); } }} />
+          </label>
+          <button type="button" className="btn-ghost" onClick={() => addBarcode(barcodeInput)}>Add</button>
+          <button type="button" className="btn-ghost" onClick={() => setScanning(true)}>Scan</button>
+        </div>
+        {barcodeError && <p role="alert" className="text-sm font-medium text-red-700">{barcodeError}</p>}
+      </div>
+      <Scanner open={scanning} onDetected={onScanned} onClose={() => setScanning(false)} />
       <label className="block"><span className="label">Notes</span><textarea className="input min-h-20 py-2" value={f.description} onChange={(e) => set('description', e.target.value)} maxLength={1000} /></label>
 
       <fieldset className="card space-y-3">

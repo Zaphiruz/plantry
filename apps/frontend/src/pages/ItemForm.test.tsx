@@ -15,7 +15,7 @@ const units = [
 ];
 
 const baseItem = {
-  id: 'i1', name: 'Rice', description: null, category: null, unit: units[0], preferredStoreId: null, barcode: null,
+  id: 'i1', name: 'Rice', description: null, category: null, unit: units[0], preferredStoreId: null, barcodes: [],
   renotifyAfterDays: 7, defaultRestockQty: 1, autoDeductQty: null, autoDeductPeriodDays: 1, autoDeductPaused: false,
   archivedAt: null, currentCount: 3, minStock: 1, low: false, lastRestockedAt: null, nextTripRowId: null,
   imageUrl: null, thumbUrl: null, imageUrlsExpireAt: null,
@@ -55,7 +55,8 @@ describe('ItemForm new-item defaults', () => {
       return json(null);
     });
     renderForm('/h/h1/items/new?barcode=123', '/h/:hid/items/new', fetchMock);
-    expect(await screen.findByDisplayValue('123')).toBeInTheDocument();
+    expect(await screen.findByText('123')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Remove barcode 123' })).toBeInTheDocument();
     const unitSelect = (await screen.findByRole('combobox', { name: 'Unit' })) as HTMLSelectElement;
     await vi.waitFor(() => expect(unitSelect.value).toBe('u-each'));
   });
@@ -169,6 +170,57 @@ describe('ItemForm manual validation', () => {
       const created = fetchMock.mock.calls.map((c) => c[0] as Request).find((r) => r.url.includes('/items') && r.method === 'POST');
       expect(created).toBeDefined();
     });
+  });
+});
+
+describe('ItemForm barcode chip list', () => {
+  it('Add appends a chip, Enter also adds, duplicate shows an inline alert and does not append, x removes', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const u = url(input);
+      if (u.includes('/units')) return json(units);
+      if (u.includes('/stores')) return json([]);
+      return json(null);
+    });
+    renderForm('/h/h1/items/new', '/h/:hid/items/new', fetchMock);
+    const addInput = await screen.findByLabelText('Add barcode');
+
+    await userEvent.type(addInput, '111');
+    await userEvent.click(screen.getByRole('button', { name: 'Add' }));
+    expect(await screen.findByText('111')).toBeInTheDocument();
+
+    await userEvent.type(addInput, '222{Enter}');
+    expect(await screen.findByText('222')).toBeInTheDocument();
+
+    await userEvent.type(addInput, '111');
+    await userEvent.click(screen.getByRole('button', { name: 'Add' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/already/i);
+    expect(screen.getAllByText('111')).toHaveLength(1);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Remove barcode 111' }));
+    expect(screen.queryByText('111')).not.toBeInTheDocument();
+  });
+
+  it('submits the accumulated barcodes list', async () => {
+    let createdBody: unknown;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const u = url(input);
+      if (u.includes('/units')) return json(units);
+      if (u.includes('/stores')) return json([]);
+      if (u.includes('/items') && (input as Request).method === 'POST') {
+        createdBody = JSON.parse(await (input as Request).text());
+        return json({ id: 'new1' });
+      }
+      return json(null);
+    });
+    renderForm('/h/h1/items/new', '/h/:hid/items/new', fetchMock);
+    await userEvent.type(await screen.findByLabelText('Name'), 'Cat food');
+    const addInput = await screen.findByLabelText('Add barcode');
+    await userEvent.type(addInput, '111{Enter}');
+    await userEvent.type(addInput, '222{Enter}');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await vi.waitFor(() => expect(createdBody).toBeDefined());
+    expect((createdBody as { barcodes: string[] }).barcodes).toEqual(['111', '222']);
   });
 });
 
