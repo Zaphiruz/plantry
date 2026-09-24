@@ -132,7 +132,6 @@ model Item {
   category             String?
   unitId               String    @map("unit_id") @db.Uuid
   preferredStoreId     String?   @map("preferred_store_id") @db.Uuid
-  barcode              String?
   imageRef             String?   @map("image_ref")
   renotifyAfterDays    Int       @default(7) @map("renotify_after_days")
   defaultRestockQty    Decimal   @default(1) @map("default_restock_qty") @db.Decimal(12, 3)
@@ -151,11 +150,25 @@ model Item {
   inventory      Inventory?
   events         InventoryEvent[]
   listRows       ShoppingListItem[]
+  barcodes       ItemBarcode[]
   mergesAsSource ItemMerge[]        @relation("MergeSource")
   mergesAsTarget ItemMerge[]        @relation("MergeTarget")
 
   @@index([householdId, archivedAt])
   @@map("items")
+}
+
+model ItemBarcode {
+  id          String   @id @default(uuid()) @db.Uuid
+  itemId      String   @map("item_id") @db.Uuid
+  householdId String   @map("household_id") @db.Uuid
+  code        String
+  archived    Boolean  @default(false)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  item        Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+  @@map("item_barcodes")
 }
 
 model Inventory {

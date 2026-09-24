@@ -11,7 +11,7 @@ export interface UnitDto { id: string; name: string; pluralName: string | null; 
 
 export interface ItemDto {
   id: string; name: string; description: string | null; category: string | null;
-  unit: UnitDto; preferredStoreId: string | null; barcode: string | null;
+  unit: UnitDto; preferredStoreId: string | null; barcodes: string[];
   renotifyAfterDays: number; defaultRestockQty: number;
   autoDeductQty: number | null; autoDeductPeriodDays: number; autoDeductPaused: boolean;
   archivedAt: string | null;

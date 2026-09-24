@@ -13,7 +13,7 @@ describe('items', () => {
   it('creates with inventory; initial count is an adjust event', async () => {
     const u = await ctx.user(); const hid = await ctx.household(u);
     const r = await ctx.call(u, 'POST', `/api/households/${hid}/items`,
-      { name: 'Cat food', unitId: await eachId(), currentCount: 6, minStock: 4, barcode: '0123' });
+      { name: 'Cat food', unitId: await eachId(), currentCount: 6, minStock: 4, barcodes: ['0123'] });
     expect(r.status).toBe(200);
     expect(r.body.data).toMatchObject({
       name: 'Cat food', currentCount: 6, minStock: 4, low: false, defaultRestockQty: 1,
@@ -34,12 +34,87 @@ describe('items', () => {
   it('barcode is unique among active items; lookup by barcode and q', async () => {
     const u = await ctx.user(); const hid = await ctx.household(u); const base = `/api/households/${hid}`;
     await ctx.item(hid, { name: 'Black beans', barcode: '111' });
-    const dup = await ctx.call(u, 'POST', `${base}/items`, { name: 'Other', unitId: await eachId(), barcode: '111' });
+    const dup = await ctx.call(u, 'POST', `${base}/items`, { name: 'Other', unitId: await eachId(), barcodes: ['111'] });
     expect(dup.status).toBe(409);
     expect(dup.body.error.code).toBe('barcode_conflict');
     expect((await ctx.call(u, 'GET', `${base}/items?barcode=111`)).body.data).toHaveLength(1);
     expect((await ctx.call(u, 'GET', `${base}/items?q=BEAN`)).body.data).toHaveLength(1);
     expect((await ctx.call(u, 'GET', `${base}/items?barcode=999`)).body.data).toEqual([]);
+  });
+
+  it('creates with two barcodes; both returned sorted', async () => {
+    const u = await ctx.user(); const hid = await ctx.household(u); const base = `/api/households/${hid}`;
+    const r = await ctx.call(u, 'POST', `${base}/items`, { name: 'Rice', unitId: await eachId(), barcodes: ['222', '111'] });
+    expect(r.status).toBe(200);
+    expect(r.body.data.barcodes).toEqual(['111', '222']);
+  });
+
+  it('duplicate codes within the create list are de-duplicated', async () => {
+    const u = await ctx.user(); const hid = await ctx.household(u); const base = `/api/households/${hid}`;
+    const r = await ctx.call(u, 'POST', `${base}/items`, { name: 'Rice', unitId: await eachId(), barcodes: ['111', '111'] });
+    expect(r.body.data.barcodes).toEqual(['111']);
+  });
+
+  it('PATCH replaces the barcode list (removed codes gone, added present)', async () => {
+    const u = await ctx.user(); const hid = await ctx.household(u); const base = `/api/households/${hid}`;
+    const item = await ctx.item(hid, { barcodes: ['111', '222'] });
+    const r = await ctx.call(u, 'PATCH', `${base}/items/${item.id}`, { barcodes: ['222', '333'] });
+    expect(r.status).toBe(200);
+    expect(r.body.data.barcodes).toEqual(['222', '333']);
+  });
+
+  it('a barcode held by another active item is rejected with details.code, both on create and PATCH', async () => {
+    const u = await ctx.user(); const hid = await ctx.household(u); const base = `/api/households/${hid}`;
+    await ctx.item(hid, { barcode: 'taken' });
+    const created = await ctx.call(u, 'POST', `${base}/items`, { name: 'X', unitId: await eachId(), barcodes: ['taken'] });
+    expect(created.status).toBe(409);
+    expect(created.body.error.code).toBe('barcode_conflict');
+    expect(created.body.error.details.code).toBe('taken');
+
+    const other = await ctx.item(hid, { barcode: 'free' });
+    const patched = await ctx.call(u, 'PATCH', `${base}/items/${other.id}`, { barcodes: ['taken'] });
+    expect(patched.status).toBe(409);
+    expect(patched.body.error.details.code).toBe('taken');
+  });
+
+  it('GET /items?barcode= finds the item by either of its codes, and [] for an archived owner', async () => {
+    const u = await ctx.user(); const hid = await ctx.household(u); const base = `/api/households/${hid}`;
+    const item = await ctx.item(hid, { barcodes: ['aaa', 'bbb'] });
+    expect((await ctx.call(u, 'GET', `${base}/items?barcode=aaa`)).body.data.map((i: { id: string }) => i.id)).toEqual([item.id]);
+    expect((await ctx.call(u, 'GET', `${base}/items?barcode=bbb`)).body.data.map((i: { id: string }) => i.id)).toEqual([item.id]);
+    await ctx.call(u, 'POST', `${base}/items/${item.id}/archive`);
+    expect((await ctx.call(u, 'GET', `${base}/items?barcode=aaa`)).body.data).toEqual([]);
+  });
+
+  it('archive frees the codes for another item to use', async () => {
+    const u = await ctx.user(); const hid = await ctx.household(u); const base = `/api/households/${hid}`;
+    const item = await ctx.item(hid, { barcode: '999' });
+    await ctx.call(u, 'POST', `${base}/items/${item.id}/archive`);
+    const r = await ctx.call(u, 'POST', `${base}/items`, { name: 'Reuse', unitId: await eachId(), barcodes: ['999'] });
+    expect(r.status).toBe(200);
+  });
+
+  it('unarchive with a taken code -> 409 with details.code; with free codes -> 200', async () => {
+    const u = await ctx.user(); const hid = await ctx.household(u); const base = `/api/households/${hid}`;
+    const item = await ctx.item(hid, { barcode: 'shared' });
+    await ctx.call(u, 'POST', `${base}/items/${item.id}/archive`);
+    await ctx.item(hid, { barcode: 'shared' });
+    const blocked = await ctx.call(u, 'POST', `${base}/items/${item.id}/unarchive`);
+    expect(blocked.status).toBe(409);
+    expect(blocked.body.error.details.code).toBe('shared');
+
+    const free = await ctx.item(hid, { barcode: 'free-code', archived: true });
+    const ok = await ctx.call(u, 'POST', `${base}/items/${free.id}/unarchive`);
+    expect(ok.status).toBe(200);
+    expect(ok.body.data.barcodes).toEqual(['free-code']);
+  });
+
+  it('hard delete removes the item_barcodes rows (FK cascade)', async () => {
+    const admin = await ctx.user({ admin: true }); const hid = await ctx.household(admin); const base = `/api/households/${hid}`;
+    const item = await ctx.item(hid, { barcode: 'gone-soon' });
+    await ctx.call(admin, 'POST', `${base}/items/${item.id}/archive`);
+    expect((await ctx.call(admin, 'DELETE', `${base}/items/${item.id}`)).status).toBe(204);
+    expect(await ctx.prisma.itemBarcode.count({ where: { itemId: item.id } })).toBe(0);
   });
 
   it('PATCH edits fields + minStock; enabling/editing/unpausing auto-deduct resets the anchor, restock-unrelated edits do not', async () => {

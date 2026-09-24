@@ -30,13 +30,16 @@ export const unitCreateSchema = z.object({
 }).strict();
 export const unitUpdateSchema = z.object(unitFields).partial().strict();
 
+export const barcodeSchema = z.string().trim().min(1).max(64);
+export const barcodesSchema = z.array(barcodeSchema).max(20).transform((list) => [...new Set(list)]);
+
 const itemFields = {
   name: nameSchema,
   description: z.string().trim().max(1000).nullish(),
   category: z.string().trim().min(1).max(60).nullish(),
   unitId: uuid,
   preferredStoreId: uuid.nullish(),
-  barcode: z.string().trim().min(1).max(64).nullish(),
+  barcodes: barcodesSchema,
   renotifyAfterDays: z.number().int().min(1).max(365),
   defaultRestockQty: qtySchema,
   autoDeductQty: qtySchema.nullish(),
@@ -46,6 +49,7 @@ const itemFields = {
 };
 export const itemCreateSchema = z.object({
   ...itemFields,
+  barcodes: itemFields.barcodes.default([]),
   renotifyAfterDays: itemFields.renotifyAfterDays.default(7),
   defaultRestockQty: itemFields.defaultRestockQty.default(1),
   autoDeductPeriodDays: itemFields.autoDeductPeriodDays.default(1),

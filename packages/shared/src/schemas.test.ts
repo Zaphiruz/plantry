@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   RATE_WINDOWS, windowDays, rateWindowSchema, restockSchema, consumeSchema,
   itemCreateSchema, itemUpdateSchema, shoppingAddSchema, photoUploadSchema,
-  stepSchema, unitCreateSchema, unitUpdateSchema,
+  stepSchema, unitCreateSchema, unitUpdateSchema, barcodesSchema,
 } from './index.js';
 
 describe('rate windows', () => {
@@ -66,6 +66,39 @@ describe('items', () => {
   });
   it('update rejects currentCount (use adjust)', () => {
     expect(itemUpdateSchema.safeParse({ currentCount: 5 }).success).toBe(false);
+  });
+
+  it('barcodes default to an empty list on create', () => {
+    const v = itemCreateSchema.parse({ name: 'Cat food', unitId });
+    expect(v.barcodes).toEqual([]);
+  });
+  it('barcodes are trimmed', () => {
+    const v = itemCreateSchema.parse({ name: 'Cat food', unitId, barcodes: [' 123 '] });
+    expect(v.barcodes).toEqual(['123']);
+  });
+  it('barcodes are de-duplicated (case-sensitive)', () => {
+    const v = itemCreateSchema.parse({ name: 'Cat food', unitId, barcodes: ['123', '123', 'ABC', 'abc'] });
+    expect(v.barcodes).toEqual(['123', 'ABC', 'abc']);
+  });
+  it('rejects more than 20 barcodes', () => {
+    const many = Array.from({ length: 21 }, (_, i) => `code-${i}`);
+    expect(itemCreateSchema.safeParse({ name: 'Cat food', unitId, barcodes: many }).success).toBe(false);
+  });
+  it('rejects an empty-string barcode', () => {
+    expect(itemCreateSchema.safeParse({ name: 'Cat food', unitId, barcodes: [''] }).success).toBe(false);
+  });
+  it('update with {} applies no defaults (barcodes stays absent)', () => {
+    expect(itemUpdateSchema.parse({})).toEqual({});
+  });
+  it('update accepts an explicit barcodes list', () => {
+    expect(itemUpdateSchema.parse({ barcodes: ['1', '2'] }).barcodes).toEqual(['1', '2']);
+  });
+});
+
+describe('barcodesSchema', () => {
+  it('de-dupes and caps at 20, trims each code', () => {
+    expect(barcodesSchema.parse([' a ', 'a', 'b'])).toEqual(['a', 'b']);
+    expect(barcodesSchema.safeParse(Array.from({ length: 21 }, (_, i) => `${i}`)).success).toBe(false);
   });
 });
 

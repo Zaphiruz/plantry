@@ -12,6 +12,7 @@ export const itemInclude = {
   unit: true,
   preferredStore: true,
   listRows: { where: { checkedOff: false }, select: { id: true } },
+  barcodes: { select: { code: true } },
 } satisfies Prisma.ItemInclude;
 export type ItemFull = Prisma.ItemGetPayload<{ include: typeof itemInclude }>;
 
@@ -27,7 +28,7 @@ export async function serializeItem(i: ItemFull, storage?: Storage): Promise<Ite
   const minStock = num(inv.minStock);
   return {
     id: i.id, name: i.name, description: i.description, category: i.category,
-    unit: toUnitDto(i.unit), preferredStoreId: i.preferredStoreId, barcode: i.barcode,
+    unit: toUnitDto(i.unit), preferredStoreId: i.preferredStoreId, barcodes: i.barcodes.map((b) => b.code).sort(),
     renotifyAfterDays: i.renotifyAfterDays, defaultRestockQty: num(i.defaultRestockQty),
     autoDeductQty: numOrNull(i.autoDeductQty), autoDeductPeriodDays: i.autoDeductPeriodDays,
     autoDeductPaused: i.autoDeductPaused,
@@ -92,17 +93,25 @@ export async function consolidate(prisma: PrismaClient, rawArgs: ConsolidateArgs
     if (targetHasRow) await tx.shoppingListItem.deleteMany({ where: { itemId: source.id, checkedOff: false } });
     else await tx.shoppingListItem.updateMany({ where: { itemId: source.id, checkedOff: false }, data: { itemId: target.id, name: target.name } });
 
+    // The source's barcodes move to the target; codes the target already holds are dropped
+    // silently (the partial unique index would otherwise reject the move).
+    const sourceCodes = await tx.itemBarcode.findMany({ where: { itemId: source.id } });
+    const targetCodeSet = new Set((await tx.itemBarcode.findMany({ where: { itemId: target.id }, select: { code: true } })).map((c) => c.code));
+    const toDrop = sourceCodes.filter((c) => targetCodeSet.has(c.code)).map((c) => c.id);
+    const toMove = sourceCodes.filter((c) => !targetCodeSet.has(c.code)).map((c) => c.id);
+    if (toDrop.length) await tx.itemBarcode.deleteMany({ where: { id: { in: toDrop } } });
+    if (toMove.length) await tx.itemBarcode.updateMany({ where: { id: { in: toMove } }, data: { itemId: target.id, archived: false } });
+
     await tx.item.update({
       where: { id: source.id },
       data: {
-        barcode: null, archivedAt: new Date(), archivedBy: a.userSub,
+        archivedAt: new Date(), archivedBy: a.userSub,
         ...(!target.imageRef && source.imageRef ? { imageRef: null } : {}),
       },
     });
     await tx.item.update({
       where: { id: target.id },
       data: {
-        ...(!target.barcode && source.barcode ? { barcode: source.barcode } : {}),
         ...(!target.imageRef && source.imageRef ? { imageRef: source.imageRef } : {}),
       },
     });

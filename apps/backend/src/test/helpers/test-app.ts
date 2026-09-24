@@ -6,7 +6,7 @@ import { createSessionStore } from '../../auth/session.js';
 import { FakeGithub, FakeOidcClient, FakePush, FakeStorage } from './fakes.js';
 import { applyEvent } from '../../services/inventory.js';
 
-export interface ItemOpts { name?: string; count?: number; min?: number; storeId?: string; barcode?: string; archived?: boolean; defaultRestockQty?: number; unitId?: string }
+export interface ItemOpts { name?: string; count?: number; min?: number; storeId?: string; barcode?: string; barcodes?: string[]; archived?: boolean; defaultRestockQty?: number; unitId?: string }
 
 export const TEST_ORIGIN = 'http://localhost:5173';
 export const TEST_COOKIE = 'plantry_sid';
@@ -86,13 +86,15 @@ export async function createTestApp(opts: { storage?: boolean; push?: boolean; g
     },
     async item(hid, opts = {}) {
       const each = await prisma.unit.findFirstOrThrow({ where: { householdId: null, name: 'each' } });
+      const codes = opts.barcodes ?? (opts.barcode ? [opts.barcode] : []);
       const item = await prisma.item.create({
         data: {
           householdId: hid, name: opts.name ?? `Item ${++n}`, unitId: opts.unitId ?? each.id,
-          preferredStoreId: opts.storeId ?? null, barcode: opts.barcode ?? null,
+          preferredStoreId: opts.storeId ?? null,
           defaultRestockQty: opts.defaultRestockQty ?? 1,
           archivedAt: opts.archived ? new Date() : null,
           inventory: { create: { minStock: opts.min ?? 0 } },
+          barcodes: { create: codes.map((code) => ({ householdId: hid, code, archived: !!opts.archived })) },
         },
       });
       if (opts.count) {

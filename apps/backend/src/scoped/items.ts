@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import type { PrismaClient } from '@prisma/client';
 import { Prisma } from '@prisma/client';
 import { consolidateSchema, itemCreateSchema, itemUpdateSchema } from '@plantry/shared';
 import type { Deps } from '../deps.js';
@@ -8,8 +9,35 @@ import { applyEvent } from '../services/inventory.js';
 import { consolidate, itemInclude, loadItem, serializeItem } from '../services/items.js';
 import { thumbKeyOf } from '../services/storage.js';
 
-const barcodeConflict = () => new AppError(409, 'barcode_conflict', 'Another active item already uses this barcode');
+type Tx = Omit<PrismaClient, '$connect' | '$disconnect' | '$on' | '$transaction' | '$use' | '$extends'>;
+
+const barcodeConflict = (code?: string) => new AppError(409, 'barcode_conflict', 'Another active item already uses this barcode', code ? { code } : undefined);
 const isUniqueViolation = (e: unknown) => e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002';
+
+/**
+ * Which of `codes` is already held by another active item in this household. Pre-checked
+ * (rather than relying solely on the P2002 catch) so a 409 can report exactly which code clashed.
+ */
+async function findClashingCode(tx: Tx, hid: string, codes: string[], exceptItemId?: string): Promise<string | undefined> {
+  if (codes.length === 0) return undefined;
+  const clash = await tx.itemBarcode.findFirst({
+    where: { householdId: hid, code: { in: codes }, archived: false, ...(exceptItemId ? { itemId: { not: exceptItemId } } : {}) },
+  });
+  return clash?.code;
+}
+
+/** Replace-semantics sync of an item's barcodes, inside the caller's transaction. */
+async function syncBarcodes(tx: Tx, hid: string, itemId: string, codes: string[]): Promise<void> {
+  const existing = await tx.itemBarcode.findMany({ where: { itemId }, select: { id: true, code: true } });
+  const existingCodes = new Set(existing.map((r) => r.code));
+  const wanted = new Set(codes);
+  const toDeleteIds = existing.filter((r) => !wanted.has(r.code)).map((r) => r.id);
+  const toInsert = codes.filter((c) => !existingCodes.has(c));
+  if (toDeleteIds.length) await tx.itemBarcode.deleteMany({ where: { id: { in: toDeleteIds } } });
+  if (toInsert.length) {
+    await tx.itemBarcode.createMany({ data: toInsert.map((code) => ({ itemId, householdId: hid, code, archived: false })) });
+  }
+}
 
 export function registerItemRoutes(s: FastifyInstance, deps: Deps): void {
   const { prisma } = deps;
@@ -24,13 +52,6 @@ export function registerItemRoutes(s: FastifyInstance, deps: Deps): void {
       if (!ok) throw new AppError(400, 'validation_error', 'Unknown store');
     }
   }
-  async function assertBarcodeFree(hid: string, barcode: string | null | undefined, exceptId?: string): Promise<void> {
-    if (!barcode) return;
-    const clash = await prisma.item.findFirst({
-      where: { householdId: hid, barcode, archivedAt: null, ...(exceptId ? { id: { not: exceptId } } : {}) },
-    });
-    if (clash) throw barcodeConflict();
-  }
 
   s.get<{ Querystring: { q?: string; barcode?: string; archived?: string } }>('/items', async (req) => {
     const { q, barcode, archived } = req.query;
@@ -38,7 +59,7 @@ export function registerItemRoutes(s: FastifyInstance, deps: Deps): void {
       where: {
         householdId: req.household!.id,
         archivedAt: archived === 'true' ? { not: null } : null,
-        ...(barcode ? { barcode } : {}),
+        ...(barcode ? { barcodes: { some: { code: barcode, archived: false } } } : {}),
         ...(q ? { name: { contains: q, mode: 'insensitive' as const } } : {}),
       },
       include: itemInclude,
@@ -51,17 +72,19 @@ export function registerItemRoutes(s: FastifyInstance, deps: Deps): void {
     const hid = req.household!.id;
     const b = parse(itemCreateSchema, req.body);
     await assertRefs(hid, b.unitId, b.preferredStoreId);
-    await assertBarcodeFree(hid, b.barcode);
     try {
       const id = await prisma.$transaction(async (tx) => {
+        const clash = await findClashingCode(tx, hid, b.barcodes);
+        if (clash) throw barcodeConflict(clash);
         const item = await tx.item.create({
           data: {
             householdId: hid, name: b.name, description: b.description ?? null, category: b.category ?? null,
-            unitId: b.unitId, preferredStoreId: b.preferredStoreId ?? null, barcode: b.barcode ?? null,
+            unitId: b.unitId, preferredStoreId: b.preferredStoreId ?? null,
             renotifyAfterDays: b.renotifyAfterDays, defaultRestockQty: b.defaultRestockQty,
             autoDeductQty: b.autoDeductQty ?? null, autoDeductPeriodDays: b.autoDeductPeriodDays,
             autoDeductPaused: b.autoDeductPaused,
             inventory: { create: { minStock: b.minStock, lastAutoDeductAt: b.autoDeductQty ? new Date() : null } },
+            barcodes: { create: b.barcodes.map((code) => ({ householdId: hid, code, archived: false })) },
           },
         });
         if (b.currentCount !== 0) {
@@ -89,9 +112,8 @@ export function registerItemRoutes(s: FastifyInstance, deps: Deps): void {
     const existing = await loadItem(deps, hid, req.params.id);
     const b = parse(itemUpdateSchema, req.body);
     await assertRefs(hid, b.unitId, b.preferredStoreId);
-    if (b.barcode !== undefined) await assertBarcodeFree(hid, b.barcode, existing.id);
 
-    const { minStock, ...itemFields } = b;
+    const { minStock, barcodes, ...itemFields } = b;
     const nextQty = b.autoDeductQty !== undefined ? b.autoDeductQty : existing.autoDeductQty === null ? null : Number(existing.autoDeductQty);
     const qtyChanged = b.autoDeductQty !== undefined && (b.autoDeductQty ?? null) !== (existing.autoDeductQty === null ? null : Number(existing.autoDeductQty));
     const periodChanged = b.autoDeductPeriodDays !== undefined && b.autoDeductPeriodDays !== existing.autoDeductPeriodDays;
@@ -103,6 +125,11 @@ export function registerItemRoutes(s: FastifyInstance, deps: Deps): void {
 
     try {
       await prisma.$transaction(async (tx) => {
+        if (barcodes !== undefined) {
+          const clash = await findClashingCode(tx, hid, barcodes, existing.id);
+          if (clash) throw barcodeConflict(clash);
+          await syncBarcodes(tx, hid, existing.id, barcodes);
+        }
         await tx.item.update({ where: { id: existing.id }, data: itemFields });
         await tx.inventory.update({
           where: { itemId: existing.id },
@@ -121,6 +148,7 @@ export function registerItemRoutes(s: FastifyInstance, deps: Deps): void {
     const item = await loadItem(deps, hid, req.params.id);
     await prisma.$transaction([
       prisma.item.update({ where: { id: item.id }, data: { archivedAt: new Date(), archivedBy: req.user!.sub } }),
+      prisma.itemBarcode.updateMany({ where: { itemId: item.id }, data: { archived: true } }),
       prisma.shoppingListItem.deleteMany({ where: { itemId: item.id } }),
     ]);
     return { data: await serializeItem(await loadItem(deps, hid, item.id, { allowArchived: true }), deps.storage) };
@@ -129,9 +157,14 @@ export function registerItemRoutes(s: FastifyInstance, deps: Deps): void {
   s.post<{ Params: { id: string } }>('/items/:id/unarchive', async (req) => {
     const hid = req.household!.id;
     const item = await loadItem(deps, hid, req.params.id, { allowArchived: true });
-    await assertBarcodeFree(hid, item.barcode, item.id);
     try {
-      await prisma.item.update({ where: { id: item.id }, data: { archivedAt: null, archivedBy: null } });
+      await prisma.$transaction(async (tx) => {
+        const codes = (await tx.itemBarcode.findMany({ where: { itemId: item.id }, select: { code: true } })).map((c) => c.code);
+        const clash = await findClashingCode(tx, hid, codes, item.id);
+        if (clash) throw barcodeConflict(clash);
+        await tx.item.update({ where: { id: item.id }, data: { archivedAt: null, archivedBy: null } });
+        await tx.itemBarcode.updateMany({ where: { itemId: item.id }, data: { archived: false } });
+      });
     } catch (e) {
       if (isUniqueViolation(e)) throw barcodeConflict();
       throw e;
