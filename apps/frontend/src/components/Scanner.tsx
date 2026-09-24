@@ -70,6 +70,7 @@ export function Scanner({ open, onDetected, onClose }: { open: boolean; onDetect
           if (stopped) zxingStop();
         }
       } catch {
+        if (stopped) return; // already torn down by a cleanup that ran while this attempt was in flight
         teardown();
         setError('Camera unavailable — check the site permission, or type the barcode on the item form.');
       }

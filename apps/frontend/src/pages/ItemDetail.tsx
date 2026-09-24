@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { RATE_WINDOWS, type EventDto, type RateWindow } from '@plantry/shared';
 import {
@@ -70,6 +70,34 @@ export function ItemDetail() {
   const scanBusy = useRef(false);
   const [mergeTarget, setMergeTarget] = useState(''); const [keepMin, setKeepMin] = useState<'target' | 'source'>('target');
 
+  // Latest item, readable from the stable callback below without making it depend on `item`
+  // (which would give Scanner a new `onDetected` identity every refetch and tear its camera down).
+  // Updated from the mutation's own response too, so a second scan fired before the refetch lands
+  // still builds its `barcodes` list on top of the first scan's result, not stale render state.
+  const itemRef = useRef(item);
+  itemRef.current = item;
+
+  // Defined above the early returns below: hooks must run unconditionally on every render.
+  const onScanned = useCallback((code: string) => {
+    setScanning(false);
+    if (scanBusy.current) return;
+    const current = itemRef.current;
+    if (!current) return;
+    scanBusy.current = true;
+    void (async () => {
+      try {
+        if (current.barcodes.includes(code)) { toast.show({ message: 'Already on this item' }); return; }
+        const hits = await findByBarcode({ hid, barcode: code }).unwrap();
+        const owner = hits.find((h) => h.id !== current.id);
+        if (owner) { toast.show({ message: `Already used by ${owner.name}` }); return; }
+        const updated = await updateItem({ hid, id, body: { barcodes: [...current.barcodes, code] } }).unwrap();
+        itemRef.current = updated;
+        toast.show({ message: 'Barcode added' });
+      } catch (err) { toast.show({ message: errorMessage(err) }); }
+      finally { scanBusy.current = false; }
+    })();
+  }, [hid, id, findByBarcode, updateItem, toast]);
+
   if (itemFailed && !item) {
     const gone = (itemError as { status?: number } | undefined)?.status === 404;
     return gone
@@ -84,23 +112,6 @@ export function ItemDetail() {
   const run = async (fn: () => Promise<unknown>, after?: () => void) => { try { await fn(); after?.(); } catch (err) { toast.show({ message: errorMessage(err) }); } };
   const unitLabel = item.unit.abbreviation ?? item.unit.pluralName ?? item.unit.name;
   const archived = !!item.archivedAt;
-
-  const onScanned = (code: string) => {
-    setScanning(false);
-    if (scanBusy.current) return;
-    scanBusy.current = true;
-    void (async () => {
-      try {
-        if (item.barcodes.includes(code)) { toast.show({ message: 'Already on this item' }); return; }
-        const hits = await findByBarcode({ hid, barcode: code }).unwrap();
-        const owner = hits.find((h) => h.id !== item.id);
-        if (owner) { toast.show({ message: `Already used by ${owner.name}` }); return; }
-        await updateItem({ hid, id, body: { barcodes: [...item.barcodes, code] } }).unwrap();
-        toast.show({ message: 'Barcode added' });
-      } catch (err) { toast.show({ message: errorMessage(err) }); }
-      finally { scanBusy.current = false; }
-    })();
-  };
 
   return (
     <div className="space-y-4 p-4">

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useCreateItemMutation, useGetItemQuery, useGetStoresQuery, useGetUnitsQuery, useUpdateItemMutation } from '../api';
 import { Scanner } from '../components/Scanner';
@@ -42,17 +42,19 @@ export function ItemForm() {
 
   const addBarcode = (raw: string) => {
     const code = raw.trim();
-    setBarcodeError(null);
-    if (!code) return;
+    if (!code) { setBarcodeError('Enter a barcode'); return; }
     if (f.barcodes.includes(code)) { setBarcodeError('This barcode is already on the list'); return; }
+    setBarcodeError(null);
     setF((s) => ({ ...s, barcodes: [...s.barcodes, code] }));
     setBarcodeInput('');
   };
   const removeBarcode = (code: string) => setF((s) => ({ ...s, barcodes: s.barcodes.filter((c) => c !== code) }));
-  const onScanned = (code: string) => {
+  // Stable identity: Scanner's camera-acquisition effect depends on `onDetected`, so a new
+  // function here on every render would tear down and re-acquire the camera mid-scan.
+  const onScanned = useCallback((code: string) => {
     setScanning(false);
     setF((s) => (s.barcodes.includes(code) ? s : { ...s, barcodes: [...s.barcodes, code] }));
-  };
+  }, []);
   const selectedUnit = units?.find((u) => u.id === f.unitId);
   const unitStep = selectedUnit?.step ?? 1;
 

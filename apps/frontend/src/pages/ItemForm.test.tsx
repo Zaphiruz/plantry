@@ -200,6 +200,22 @@ describe('ItemForm barcode chip list', () => {
     expect(screen.queryByText('111')).not.toBeInTheDocument();
   });
 
+  it('clicking Add with an empty input shows an inline alert and adds nothing', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const u = url(input);
+      if (u.includes('/units')) return json(units);
+      if (u.includes('/stores')) return json([]);
+      return json(null);
+    });
+    renderForm('/h/h1/items/new', '/h/:hid/items/new', fetchMock);
+    await screen.findByLabelText('Add barcode');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Add' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Enter a barcode');
+    expect(screen.queryAllByRole('button', { name: /Remove barcode/ })).toHaveLength(0);
+  });
+
   it('submits the accumulated barcodes list', async () => {
     let createdBody: unknown;
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {

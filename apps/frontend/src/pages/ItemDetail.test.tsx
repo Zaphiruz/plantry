@@ -4,13 +4,19 @@ import userEvent from '@testing-library/user-event';
 import { Provider } from 'react-redux';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import type { EventDto, ItemDto, UnitDto } from '@plantry/shared';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { api } from '../api';
 import { makeStore } from '../store';
 import { ToastProvider } from '../components/Toast';
 import { ItemDetail } from './ItemDetail';
 
+// Records every `onDetected` identity the mock ever received, so a test can assert it stayed
+// the same function across re-renders (a fresh one each render would tear the real Scanner's
+// camera down and re-acquire it — see Important 1).
+let scannerOnDetectedIdentities: Array<(code: string) => void> = [];
 vi.mock('../components/Scanner', () => ({
   Scanner: ({ open, onDetected }: { open: boolean; onDetected: (code: string) => void }) => {
+    scannerOnDetectedIdentities.push(onDetected);
     useEffect(() => { if (open) onDetected('999'); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
     return null;
   },
@@ -37,13 +43,15 @@ const err = (status: number, code: string, message: string) =>
   new Response(JSON.stringify({ error: { code, message } }), { status, headers: { 'content-type': 'application/json' } });
 
 afterEach(() => vi.unstubAllGlobals());
+beforeEach(() => { scannerOnDetectedIdentities = []; });
 
 const u = (input: RequestInfo | URL) => (typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
 
 function renderDetail(fetchMock: ReturnType<typeof vi.fn>) {
   vi.stubGlobal('fetch', fetchMock);
+  const store = makeStore();
   render(
-    <Provider store={makeStore()}>
+    <Provider store={store}>
       <MemoryRouter initialEntries={['/h/h1/items/i1']} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <ToastProvider>
           <Routes><Route path="/h/:hid/items/:id" element={<ItemDetail />} /></Routes>
@@ -51,6 +59,7 @@ function renderDetail(fetchMock: ReturnType<typeof vi.fn>) {
       </MemoryRouter>
     </Provider>,
   );
+  return store;
 }
 
 describe('ItemDetail history paging', () => {
@@ -162,6 +171,31 @@ describe('ItemDetail scan barcode', () => {
 
     expect(await screen.findByText('Already used by Beans')).toBeInTheDocument();
     expect(patched).toBe(false);
+  });
+
+  it('passes Scanner a stable onDetected identity across re-renders (Important 1)', async () => {
+    let itemFetchCount = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = u(input);
+      if (url.includes('/events')) return json({ events: [], nextCursor: null });
+      if (url.includes('/inventory')) return json([item]);
+      if (url.includes('/me')) return json({ user: { sub: 'me', name: 'Me', isAdmin: false }, households: [] });
+      if (url.includes('/items/i1')) { itemFetchCount += 1; return json(item); }
+      return json(null);
+    });
+    const store = renderDetail(fetchMock);
+
+    await screen.findByRole('button', { name: 'Scan barcode' });
+    expect(scannerOnDetectedIdentities.length).toBeGreaterThan(0);
+    const first = scannerOnDetectedIdentities[0];
+
+    // Force a re-render the way a background refetch would (refetchOnFocus is on globally).
+    const countBefore = itemFetchCount;
+    store.dispatch(api.util.invalidateTags(['Items']));
+    await vi.waitFor(() => expect(itemFetchCount).toBeGreaterThan(countBefore));
+    await vi.waitFor(() => expect(scannerOnDetectedIdentities.length).toBeGreaterThan(1));
+
+    expect(scannerOnDetectedIdentities.every((fn) => fn === first)).toBe(true);
   });
 });
 
