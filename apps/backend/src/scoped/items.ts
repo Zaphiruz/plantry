@@ -3,7 +3,7 @@ import type { PrismaClient } from '@prisma/client';
 import { Prisma } from '@prisma/client';
 import { consolidateSchema, itemCreateSchema, itemUpdateSchema } from '@plantry/shared';
 import type { Deps } from '../deps.js';
-import { AppError, parse } from '../errors.js';
+import { AppError, notFound, parse } from '../errors.js';
 import { uuidParam } from '../lib/ids.js';
 import { applyEvent } from '../services/inventory.js';
 import { consolidate, itemInclude, loadItem, serializeItem } from '../services/items.js';
@@ -26,8 +26,19 @@ async function findClashingCode(tx: Tx, hid: string, codes: string[], exceptItem
   return clash?.code;
 }
 
+/**
+ * Locks the item row (`SELECT ... FOR UPDATE`) and confirms it is still active, inside the
+ * caller's transaction. Guards against archive() racing in between `loadItem` (taken before the
+ * transaction opens) and a write that would otherwise leave an archived item holding an ACTIVE
+ * barcode row.
+ */
+export async function lockActiveItem(tx: Tx, id: string): Promise<void> {
+  const rows = await tx.$queryRaw<{ id: string }[]>`SELECT id FROM items WHERE id = ${id}::uuid AND archived_at IS NULL FOR UPDATE`;
+  if (rows.length === 0) throw notFound();
+}
+
 /** Replace-semantics sync of an item's barcodes, inside the caller's transaction. */
-async function syncBarcodes(tx: Tx, hid: string, itemId: string, codes: string[]): Promise<void> {
+export async function syncBarcodes(tx: Tx, hid: string, itemId: string, codes: string[]): Promise<void> {
   const existing = await tx.itemBarcode.findMany({ where: { itemId }, select: { id: true, code: true } });
   const existingCodes = new Set(existing.map((r) => r.code));
   const wanted = new Set(codes);
@@ -97,7 +108,7 @@ export function registerItemRoutes(s: FastifyInstance, deps: Deps): void {
       });
       return { data: await serializeItem(await loadItem(deps, hid, id), deps.storage) };
     } catch (e) {
-      if (isUniqueViolation(e)) throw barcodeConflict();
+      if (isUniqueViolation(e)) throw barcodeConflict(await findClashingCode(prisma, hid, b.barcodes));
       throw e;
     }
   });
@@ -126,6 +137,7 @@ export function registerItemRoutes(s: FastifyInstance, deps: Deps): void {
     try {
       await prisma.$transaction(async (tx) => {
         if (barcodes !== undefined) {
+          await lockActiveItem(tx, existing.id);
           const clash = await findClashingCode(tx, hid, barcodes, existing.id);
           if (clash) throw barcodeConflict(clash);
           await syncBarcodes(tx, hid, existing.id, barcodes);
@@ -137,7 +149,7 @@ export function registerItemRoutes(s: FastifyInstance, deps: Deps): void {
         });
       });
     } catch (e) {
-      if (isUniqueViolation(e)) throw barcodeConflict();
+      if (isUniqueViolation(e)) throw barcodeConflict(barcodes !== undefined ? await findClashingCode(prisma, hid, barcodes, existing.id) : undefined);
       throw e;
     }
     return { data: await serializeItem(await loadItem(deps, hid, existing.id), deps.storage) };
@@ -166,7 +178,10 @@ export function registerItemRoutes(s: FastifyInstance, deps: Deps): void {
         await tx.itemBarcode.updateMany({ where: { itemId: item.id }, data: { archived: false } });
       });
     } catch (e) {
-      if (isUniqueViolation(e)) throw barcodeConflict();
+      if (isUniqueViolation(e)) {
+        const codes = (await prisma.itemBarcode.findMany({ where: { itemId: item.id }, select: { code: true } })).map((c) => c.code);
+        throw barcodeConflict(await findClashingCode(prisma, hid, codes, item.id));
+      }
       throw e;
     }
     return { data: await serializeItem(await loadItem(deps, hid, item.id), deps.storage) };

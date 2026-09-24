@@ -5,7 +5,7 @@ Two **partial unique indexes** are hand-written and equally invisible to
 
 | index | table | meaning |
 | --- | --- | --- |
-| `item_barcodes_household_code_active_key` | `item_barcodes (household_id, code) WHERE NOT archived` | a barcode identifies at most one *live* item per household; archived items may reuse it. Written in `migrations/20260923_item_barcodes/migration.sql`, replacing the retired `items_household_barcode_active_key` (dropped in that same migration, when `items.barcode` moved to the `item_barcodes` table). |
+| `item_barcodes_household_code_active_key` | `item_barcodes (household_id, code) WHERE NOT archived` | a barcode identifies at most one *live* item per household; archived items may reuse it. Written in `migrations/20260924132240_item_barcodes/migration.sql`, replacing the retired `items_household_barcode_active_key` (dropped in that same migration, when `items.barcode` moved to the `item_barcodes` table). |
 | `sli_household_item_open_key` | `shopping_list_items (household_id, item_id) WHERE item_id IS NOT NULL AND NOT checked_off` | an item appears at most once as an *open* shopping-list line; checked-off history is unconstrained. Written in `migrations/20260919205143_init/migration.sql`. |
 
 The init migration also carries `CHECK` constraints (`items_default_restock_qty_pos`,

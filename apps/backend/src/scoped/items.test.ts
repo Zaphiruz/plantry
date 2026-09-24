@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createTestApp, type TestCtx } from '../test/helpers/test-app.js';
 import { resetDatabase } from '../test/helpers/db.js';
+import { lockActiveItem, syncBarcodes } from './items.js';
 
 let ctx: TestCtx;
 beforeAll(async () => { ctx = await createTestApp(); });
@@ -115,6 +116,22 @@ describe('items', () => {
     await ctx.call(admin, 'POST', `${base}/items/${item.id}/archive`);
     expect((await ctx.call(admin, 'DELETE', `${base}/items/${item.id}`)).status).toBe(204);
     expect(await ctx.prisma.itemBarcode.count({ where: { itemId: item.id } })).toBe(0);
+  });
+
+  it('lockActiveItem + syncBarcodes refuse to write an active code onto an item archived out from under them', async () => {
+    // Simulates the race: an item is archived (e.g. by a concurrent /archive call) AFTER the
+    // route's loadItem() ran but BEFORE this transaction opened. Without the guard, syncBarcodes
+    // would happily insert an ACTIVE barcode row on a now-archived item.
+    const u = await ctx.user(); const hid = await ctx.household(u);
+    const item = await ctx.item(hid);
+    await ctx.prisma.item.update({ where: { id: item.id }, data: { archivedAt: new Date() } });
+
+    await expect(ctx.prisma.$transaction(async (tx) => {
+      await lockActiveItem(tx, item.id);
+      await syncBarcodes(tx, hid, item.id, ['999']);
+    })).rejects.toThrow();
+
+    expect(await ctx.prisma.itemBarcode.count({ where: { itemId: item.id, code: '999' } })).toBe(0);
   });
 
   it('PATCH edits fields + minStock; enabling/editing/unpausing auto-deduct resets the anchor, restock-unrelated edits do not', async () => {

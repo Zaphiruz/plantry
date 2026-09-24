@@ -69,6 +69,16 @@ export async function consolidate(prisma: PrismaClient, rawArgs: ConsolidateArgs
     // Lock both inventory rows FOR UPDATE, in a deterministic order, before reading their
     // values — avoids deadlock/races with a concurrent consolidate or restock touching either row.
     const [id1, id2] = [target.id, source.id].sort();
+
+    // Also lock the items rows themselves (same order) and re-confirm both are still active.
+    // `target`/`source` above were loaded before any lock was taken, so a concurrent archive()
+    // could have archived either one in between — without this, the barcode move below could
+    // leave an archived item holding an ACTIVE barcode row.
+    const stillActive = new Set((await tx.$queryRaw<{ id: string }[]>`
+      SELECT id FROM items WHERE id IN (${id1}::uuid, ${id2}::uuid) AND archived_at IS NULL FOR UPDATE
+    `).map((r) => r.id));
+    if (!stillActive.has(target.id) || !stillActive.has(source.id)) throw notFound();
+
     const locked = await tx.$queryRaw<{ item_id: string; current_count: Prisma.Decimal; min_stock: Prisma.Decimal }[]>`
       SELECT item_id, current_count, min_stock FROM inventory WHERE item_id IN (${id1}::uuid, ${id2}::uuid) ORDER BY item_id FOR UPDATE
     `;
