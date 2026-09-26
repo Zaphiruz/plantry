@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { ItemDto } from '@plantry/shared';
-import { useAddToListMutation, useConsumeMutation, useRemoveListRowMutation, useRestockMutation, useUndoEventMutation } from '../api';
+import { useAddToListMutation, useConsumeMutation, useGetGroupsQuery, useRemoveListRowMutation, useRestockMutation, useUndoEventMutation } from '../api';
 import { errorMessage, formatQty } from '../lib/format';
 import { useLongPress } from '../lib/useLongPress';
 import { QtyDialog } from './QtyDialog';
@@ -16,6 +16,8 @@ export function ItemRow({ hid, item }: { hid: string; item: ItemDto }) {
   const [dialog, setDialog] = useState<null | 'consume' | 'restock'>(null);
   const toast = useToast();
   const unitLabel = item.unit.abbreviation ?? item.unit.pluralName ?? item.unit.name;
+  const { data: groups } = useGetGroupsQuery(hid);
+  const group = item.groupId ? groups?.find((g) => g.id === item.groupId) : undefined;
 
   const act = async (kind: 'consume' | 'restock', quantity: number) => {
     try {
@@ -49,6 +51,7 @@ export function ItemRow({ hid, item }: { hid: string; item: ItemDto }) {
           <span className={`text-sm ${item.nagging ? 'font-semibold text-red-700' : 'text-slate-500'}`}>
             {formatQty(item.currentCount, item.unit)}{item.nagging && ' · low'}
           </span>
+          {group && <span className="block w-fit rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">in {group.name}</span>}
         </span>
       </Link>
       <button type="button" aria-label={item.nextTripRowId ? `Remove ${item.name} from next trip` : `Add ${item.name} to next trip`} aria-pressed={!!item.nextTripRowId}

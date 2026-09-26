@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { RATE_WINDOWS, type EventDto, type RateWindow } from '@plantry/shared';
 import {
   useAddToListMutation, useAdjustMutation, useArchiveItemMutation, useConsolidateMutation, useDeleteItemMutation, useGetEventsQuery,
-  useGetInventoryQuery, useGetItemQuery, useGetMeQuery, useGetRateQuery, useLazyFindByBarcodeQuery, useRemoveListRowMutation,
+  useGetGroupsQuery, useGetInventoryQuery, useGetItemQuery, useGetMeQuery, useGetRateQuery, useLazyFindByBarcodeQuery, useRemoveListRowMutation,
   useUnarchiveItemMutation, useUndoEventMutation, useUpdateItemMutation,
 } from '../api';
 import { PhotoPicker } from '../components/PhotoPicker';
@@ -29,6 +29,7 @@ export function ItemDetail() {
   const { data: me } = useGetMeQuery();
   const { data: item, isError: itemFailed, error: itemError, refetch: refetchItem } = useGetItemQuery({ hid, id });
   const { data: others } = useGetInventoryQuery(hid);
+  const { data: groups } = useGetGroupsQuery(hid);
   const [rateWindow, setRateWindow] = useState<RateWindow | null>(null);
   const effectiveWindow = rateWindow ?? defaultWindowFor(item?.autoDeductPeriodDays ?? 1, item?.autoDeductQty != null);
   const { data: rate } = useGetRateQuery({ hid, id, window: effectiveWindow }, { skip: !item || !!item.archivedAt });
@@ -120,7 +121,12 @@ export function ItemDetail() {
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-xl font-semibold">{item.name}</h1>
           <p className={item.low && item.trackLow ? 'font-semibold text-red-700' : 'text-slate-600'}>{formatQty(item.currentCount, item.unit)} · keep at least {formatQty(item.minStock, item.unit)}</p>
-          {item.low && !item.trackLow && <p className="text-sm text-slate-500">Low — reminders off</p>}
+          {item.low && !item.trackLow && !item.groupId && <p className="text-sm text-slate-500">Low — reminders off</p>}
+          {item.groupId && (
+            <p className="text-sm text-slate-500">
+              In group <Link className="underline" to={`/h/${hid}/settings`}>{groups?.find((g) => g.id === item.groupId)?.name ?? '…'}</Link> — this item's reminders are handled by its group.
+            </p>
+          )}
           {archived && <p className="text-sm font-medium text-amber-700">Archived</p>}
           {item.description && <p className="mt-1 text-sm text-slate-500">{item.description}</p>}
           <p className="mt-1 font-mono text-xs text-slate-500">{item.barcodes.length > 0 ? item.barcodes.join(', ') : 'No barcodes'}</p>

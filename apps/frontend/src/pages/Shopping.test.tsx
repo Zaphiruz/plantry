@@ -101,6 +101,40 @@ describe('Shopping screen', () => {
     expect(purchaseCalls.length).toBe(1);
   });
 
+  it('renders a low group entry and tapping it purchases the suggested member', async () => {
+    const groupList: ShoppingListDto = {
+      groups: [{
+        store: null,
+        entries: [{
+          kind: 'group', groupId: 'g1', name: 'Cat treats',
+          members: [
+            { itemId: 'i1', name: 'Beef', currentCount: 1, unit },
+            { itemId: 'i2', name: 'Chicken', currentCount: 0, unit },
+          ],
+          total: 1, minStock: 2, suggested: { itemId: 'i2', quantity: 3 },
+        }],
+      }],
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const u = url(input);
+      if (u.includes('/shopping-list')) return json(groupList);
+      if (u.includes('/stores')) return json([]);
+      if (u.includes('/inventory')) return json([]);
+      if (u.includes('/purchase')) return json({ eventId: 'e1' });
+      return json(null);
+    });
+    renderShopping(fetchMock);
+
+    expect(await screen.findByText('Cat treats')).toBeInTheDocument();
+    expect(await screen.findByText(/1 of 2 in stock · buy Chicken/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /Got Chicken/ }));
+
+    await vi.waitFor(() => {
+      const purchaseReq = fetchMock.mock.calls.map((c) => c[0] as Request).find((r) => r.url.includes('/shopping-list/items/i2/purchase'));
+      expect(purchaseReq).toBeDefined();
+    });
+  });
+
   it('surfaces a toast when Undo fails', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const u = url(input);

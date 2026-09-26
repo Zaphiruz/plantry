@@ -43,8 +43,10 @@ test('create household → item → consume to low → buy from shopping list �
   await expect(page.getByRole('button', { name: /Got Cat food/ })).toBeVisible();
 
   // Extra assertion (b): Settings → add a store "Costco" appears in the list
+  // (scoped to the store row's own delete button — "Costco" also now appears as an <option>
+  // in the Groups section's preferred-store select on this same page)
   await page.getByRole('link', { name: 'Settings' }).click();
   await page.getByPlaceholder('New store').fill('Costco');
   await page.getByPlaceholder('New store').locator('..').getByRole('button', { name: 'Add' }).click();
-  await expect(page.getByText('Costco')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Delete Costco' })).toBeVisible();
 });

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { useCreateItemMutation, useGetItemQuery, useGetStoresQuery, useGetUnitsQuery, useUpdateItemMutation } from '../api';
+import { useCreateItemMutation, useGetGroupsQuery, useGetItemQuery, useGetStoresQuery, useGetUnitsQuery, useUpdateItemMutation } from '../api';
 import { Scanner } from '../components/Scanner';
 import { useToast } from '../components/Toast';
 import { errorMessage } from '../lib/format';
@@ -8,11 +8,11 @@ import { errorMessage } from '../lib/format';
 interface FormState {
   name: string; description: string; category: string; unitId: string; preferredStoreId: string; barcodes: string[];
   currentCount: string; minStock: string; defaultRestockQty: string; renotifyAfterDays: string;
-  autoOn: boolean; autoQty: string; autoPeriod: string; autoPaused: boolean; trackLow: boolean;
+  autoOn: boolean; autoQty: string; autoPeriod: string; autoPaused: boolean; trackLow: boolean; groupId: string;
 }
 const EMPTY: FormState = {
   name: '', description: '', category: '', unitId: '', preferredStoreId: '', barcodes: [], currentCount: '0', minStock: '0',
-  defaultRestockQty: '1', renotifyAfterDays: '7', autoOn: false, autoQty: '1', autoPeriod: '1', autoPaused: false, trackLow: true,
+  defaultRestockQty: '1', renotifyAfterDays: '7', autoOn: false, autoQty: '1', autoPeriod: '1', autoPaused: false, trackLow: true, groupId: '',
 };
 
 const threeDp = (n: number) => Math.abs(n * 1000 - Math.round(n * 1000)) < 1e-6;
@@ -26,6 +26,7 @@ export function ItemForm() {
   const { data: existing } = useGetItemQuery({ hid, id: id ?? '' }, { skip: !editing });
   const { data: stores } = useGetStoresQuery(hid);
   const { data: units } = useGetUnitsQuery(hid);
+  const { data: groups } = useGetGroupsQuery(hid);
   const [createItem, createState] = useCreateItemMutation();
   const [updateItem, updateState] = useUpdateItemMutation();
   const seedBarcode = params.get('barcode');
@@ -66,7 +67,7 @@ export function ItemForm() {
       preferredStoreId: existing.preferredStoreId ?? '', barcodes: existing.barcodes, currentCount: String(existing.currentCount),
       minStock: String(existing.minStock), defaultRestockQty: String(existing.defaultRestockQty), renotifyAfterDays: String(existing.renotifyAfterDays),
       autoOn: existing.autoDeductQty !== null, autoQty: String(existing.autoDeductQty ?? 1), autoPeriod: String(existing.autoDeductPeriodDays),
-      autoPaused: existing.autoDeductPaused, trackLow: existing.trackLow,
+      autoPaused: existing.autoDeductPaused, trackLow: existing.trackLow, groupId: existing.groupId ?? '',
     });
   }, [existing]);
   useEffect(() => {
@@ -112,7 +113,7 @@ export function ItemForm() {
       preferredStoreId: f.preferredStoreId || null, barcodes: f.barcodes, minStock: Number(f.minStock),
       defaultRestockQty: Number(f.defaultRestockQty), renotifyAfterDays: Number(f.renotifyAfterDays),
       autoDeductQty: f.autoOn ? Number(f.autoQty) : null, autoDeductPeriodDays: Number(f.autoPeriod), autoDeductPaused: f.autoOn && f.autoPaused,
-      trackLow: f.trackLow,
+      trackLow: f.trackLow, groupId: f.groupId || null,
     };
     try {
       const saved = editing
@@ -149,6 +150,13 @@ export function ItemForm() {
         {num('renotifyAfterDays', 'Re-remind every (days)', { min: 1, max: 365, step: 1, inputMode: 'numeric' })}
       </div>
       <label className="block"><span className="label">Category</span><input className="input" value={f.category} onChange={(e) => set('category', e.target.value)} maxLength={60} placeholder="e.g. Pets" /></label>
+      <div className="space-y-1">
+        <label className="block"><span className="label">Group</span>
+          <select className="input" value={f.groupId} onChange={(e) => set('groupId', e.target.value)}>
+            <option value="">None</option>{groups?.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+          </select></label>
+        <p className="text-sm text-slate-500">Grouped items share one minimum and one reminder.</p>
+      </div>
       <div className="space-y-1">
         <label className="flex min-h-11 items-center gap-3"><input type="checkbox" className="h-5 w-5" checked={f.trackLow} onChange={(e) => set('trackLow', e.target.checked)} /><span className="font-medium">Remind me when this runs low</span></label>
         <p className="text-sm text-slate-500">Off: no notifications and it never appears on the shopping list automatically. You can still add it to a trip by hand.</p>

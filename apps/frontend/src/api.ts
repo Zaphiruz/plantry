@@ -1,6 +1,6 @@
 import { createApi, fetchBaseQuery, type BaseQueryFn, type FetchArgs, type FetchBaseQueryError } from '@reduxjs/toolkit/query/react';
 import type {
-  EventsPageDto, FeedbackDto, HouseholdSummary, InviteDto, ItemCreateInput, ItemDto, ItemUpdateInput, MeDto, MemberDto, MemberRole,
+  EventsPageDto, FeedbackDto, GroupDto, HouseholdSummary, InviteDto, ItemCreateInput, ItemDto, ItemUpdateInput, MeDto, MemberDto, MemberRole,
   PhotoUploadDto, PurchaseResultDto, RateDto, RateWindow, ShoppingAddInput, ShoppingListDto, StoreDto, UnitDto,
 } from '@plantry/shared';
 
@@ -21,7 +21,7 @@ const baseQuery: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError> =
 
 type Hid = { hid: string };
 const h = (hid: string) => `/households/${hid}`;
-const STOCK_TAGS = ['Items', 'Shopping', 'Events', 'Rates'] as const;
+const STOCK_TAGS = ['Items', 'Shopping', 'Events', 'Rates', 'Groups'] as const;
 interface StockResult { item: ItemDto; eventId: string | null }
 
 export const api = createApi({
@@ -34,7 +34,7 @@ export const api = createApi({
   // clobber what the user is typing.
   refetchOnFocus: true,
   refetchOnReconnect: true,
-  tagTypes: ['Me', 'Members', 'Stores', 'Units', 'Items', 'Shopping', 'Events', 'Rates', 'Feedback'],
+  tagTypes: ['Me', 'Members', 'Stores', 'Units', 'Items', 'Shopping', 'Events', 'Rates', 'Feedback', 'Groups'],
   endpoints: (b) => ({
     getMe: b.query<MeDto, void>({ query: () => '/me', providesTags: ['Me'] }),
     logout: b.mutation<{ endSessionUrl: string | null }, void>({ query: () => ({ url: '/auth/logout', method: 'POST' }) }),
@@ -52,6 +52,11 @@ export const api = createApi({
     createStore: b.mutation<StoreDto, Hid & { name: string; notes?: string | null }>({ query: ({ hid, ...body }) => ({ url: `${h(hid)}/stores`, method: 'POST', body }), invalidatesTags: ['Stores'] }),
     updateStore: b.mutation<StoreDto, Hid & { id: string; name?: string; notes?: string | null }>({ query: ({ hid, id, ...body }) => ({ url: `${h(hid)}/stores/${id}`, method: 'PATCH', body }), invalidatesTags: ['Stores', 'Shopping'] }),
     deleteStore: b.mutation<void, Hid & { id: string }>({ query: ({ hid, id }) => ({ url: `${h(hid)}/stores/${id}`, method: 'DELETE' }), invalidatesTags: ['Stores', 'Items', 'Shopping'] }),
+
+    getGroups: b.query<GroupDto[], string>({ query: (hid) => `${h(hid)}/groups`, providesTags: ['Groups'] }),
+    createGroup: b.mutation<GroupDto, Hid & { name: string; minStock?: number; preferredStoreId?: string | null; renotifyAfterDays?: number }>({ query: ({ hid, ...body }) => ({ url: `${h(hid)}/groups`, method: 'POST', body }), invalidatesTags: ['Groups'] }),
+    updateGroup: b.mutation<GroupDto, Hid & { id: string; name?: string; minStock?: number; preferredStoreId?: string | null; renotifyAfterDays?: number }>({ query: ({ hid, id, ...body }) => ({ url: `${h(hid)}/groups/${id}`, method: 'PATCH', body }), invalidatesTags: ['Groups', 'Items', 'Shopping'] }),
+    deleteGroup: b.mutation<void, Hid & { id: string }>({ query: ({ hid, id }) => ({ url: `${h(hid)}/groups/${id}`, method: 'DELETE' }), invalidatesTags: ['Groups', 'Items', 'Shopping'] }),
 
     getUnits: b.query<UnitDto[], string>({ query: (hid) => `${h(hid)}/units`, providesTags: ['Units'] }),
     createUnit: b.mutation<UnitDto, Hid & { name: string; pluralName?: string | null; abbreviation?: string | null; step?: number }>({ query: ({ hid, ...body }) => ({ url: `${h(hid)}/units`, method: 'POST', body }), invalidatesTags: ['Units'] }),
@@ -129,6 +134,7 @@ export const {
   useGetMeQuery, useLogoutMutation, useCreateHouseholdMutation, useAcceptInviteMutation, useRenameHouseholdMutation,
   useGetMembersQuery, useSetMemberRoleMutation, useRemoveMemberMutation, useLeaveHouseholdMutation, useCreateInviteMutation,
   useGetStoresQuery, useCreateStoreMutation, useUpdateStoreMutation, useDeleteStoreMutation,
+  useGetGroupsQuery, useCreateGroupMutation, useUpdateGroupMutation, useDeleteGroupMutation,
   useGetUnitsQuery, useCreateUnitMutation, useUpdateUnitMutation, useDeleteUnitMutation,
   useGetInventoryQuery, useGetArchivedItemsQuery, useLazyFindByBarcodeQuery, useGetItemQuery, useCreateItemMutation, useUpdateItemMutation,
   useArchiveItemMutation, useUnarchiveItemMutation, useDeleteItemMutation, useConsolidateMutation,

@@ -2,7 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Provider } from 'react-redux';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import type { MeDto, UnitDto } from '@plantry/shared';
+import type { GroupDto, MeDto, UnitDto } from '@plantry/shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api } from '../api';
 import { makeStore } from '../store';
@@ -25,7 +25,9 @@ function url(input: RequestInfo | URL): string {
   return typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
 }
 
-function renderSettings(me: MeDto, unitsBox: { current: UnitDto[] } = { current: [] }) {
+function renderSettings(
+  me: MeDto, unitsBox: { current: UnitDto[] } = { current: [] }, groupsBox: { current: GroupDto[] } = { current: [] },
+) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
     const u = url(input);
     const method = input instanceof Request ? input.method : 'GET';
@@ -33,6 +35,8 @@ function renderSettings(me: MeDto, unitsBox: { current: UnitDto[] } = { current:
     if (u.includes('/members')) return json([{ sub: 'me', name: 'Me', email: 'me@example.com', role: me.households[0]!.role, joinedAt: new Date().toISOString() }]);
     if (u.includes('/stores')) return json([]);
     if (u.includes('/units') && method === 'GET') return json(unitsBox.current);
+    if (u.includes('/groups') && method === 'GET') return json(groupsBox.current);
+    if (u.includes('/inventory')) return json([]);
     if (u.includes('/items?archived=true')) return json([]);
     if (u.includes('/feedback/mine')) return json([]);
     if (u.includes('/push/vapid-key')) return json({ publicKey: null });
@@ -188,5 +192,36 @@ describe('Settings custom units', () => {
     await vi.waitFor(() => expect(stepInput).toHaveValue(8));
     expect(await screen.findByText(/decimal places/i)).toBeInTheDocument();
     expect(fetchMock.mock.calls.some((c) => url(c[0]).includes('/units/u-case') && (c[0] as Request).method === 'PATCH')).toBe(false);
+  });
+});
+
+describe('Settings groups', () => {
+  it('creating a group sends name and minimum', async () => {
+    const { fetchMock } = renderSettings(baseMe);
+    await screen.findByText('Home');
+    await userEvent.type(screen.getByLabelText('Group name'), 'Cat treats');
+    await userEvent.clear(screen.getByLabelText('Minimum'));
+    await userEvent.type(screen.getByLabelText('Minimum'), '3');
+    const groupForm = screen.getByLabelText('Group name').closest('form')!;
+    await userEvent.click(within(groupForm).getByRole('button', { name: 'Add' }));
+
+    await vi.waitFor(() => {
+      const createReq = fetchMock.mock.calls.map((c) => c[0] as Request).find((r) => r.url.endsWith('/groups') && r.method === 'POST');
+      expect(createReq).toBeDefined();
+    });
+    const createReq = fetchMock.mock.calls.map((c) => c[0] as Request).find((r) => r.url.endsWith('/groups') && r.method === 'POST')!;
+    const body = JSON.parse(await createReq.clone().text());
+    expect(body).toMatchObject({ name: 'Cat treats', minStock: 3 });
+  });
+
+  it('deleting a group asks for confirmation and sends DELETE', async () => {
+    const group: GroupDto = { id: 'g1', name: 'Cat treats', minStock: 3, preferredStoreId: null, renotifyAfterDays: 7, memberIds: [], total: 0, low: false };
+    const { fetchMock } = renderSettings(baseMe, undefined, { current: [group] });
+    await screen.findByText('Cat treats');
+    vi.stubGlobal('confirm', () => true);
+    await userEvent.click(screen.getByRole('button', { name: 'Delete Cat treats' }));
+    await vi.waitFor(() => {
+      expect(fetchMock.mock.calls.some((c) => url(c[0]).includes('/groups/g1') && (c[0] as Request).method === 'DELETE')).toBe(true);
+    });
   });
 });

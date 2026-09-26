@@ -11,7 +11,7 @@ const unit = { id: 'u1', name: 'unit', pluralName: 'units', abbreviation: null, 
 const item = {
   id: 'i1', name: 'Rice', description: null, category: null, unit, preferredStoreId: null, barcodes: [],
   renotifyAfterDays: 30, defaultRestockQty: 5, autoDeductQty: null, autoDeductPeriodDays: 30, autoDeductPaused: false,
-  archivedAt: null, currentCount: 3, minStock: 2, low: false, trackLow: true, nagging: false, lastRestockedAt: null, nextTripRowId: null,
+  archivedAt: null, currentCount: 3, minStock: 2, low: false, trackLow: true, nagging: false, groupId: null, lastRestockedAt: null, nextTripRowId: null,
   imageUrl: 'https://example.test/img.jpg', thumbUrl: 'https://example.test/thumb.jpg', imageUrlsExpireAt: null,
 } as ItemDto;
 

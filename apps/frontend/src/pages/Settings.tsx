@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import type { UnitDto } from '@plantry/shared';
 import {
-  useCreateInviteMutation, useCreateStoreMutation, useCreateUnitMutation, useDeleteStoreMutation, useDeleteUnitMutation, useGetArchivedItemsQuery,
+  useCreateGroupMutation, useCreateInviteMutation, useCreateStoreMutation, useCreateUnitMutation, useDeleteGroupMutation, useDeleteStoreMutation,
+  useDeleteUnitMutation, useGetArchivedItemsQuery, useGetGroupsQuery, useGetInventoryQuery,
   useGetMeQuery, useGetMembersQuery, useGetMyFeedbackQuery, useGetStoresQuery, useGetUnitsQuery, useGetVapidKeyQuery, useLeaveHouseholdMutation,
   useLogoutMutation, usePushSubscribeMutation, usePushUnsubscribeMutation, useRemoveMemberMutation, useRenameHouseholdMutation,
-  useSendFeedbackMutation, useSetMemberRoleMutation, useUnarchiveItemMutation, useUpdateUnitMutation,
+  useSendFeedbackMutation, useSetMemberRoleMutation, useUnarchiveItemMutation, useUpdateGroupMutation, useUpdateUnitMutation,
 } from '../api';
 import { useToast } from '../components/Toast';
 import { errorMessage } from '../lib/format';
@@ -83,6 +84,65 @@ function UnitStepEditor({ hid, unit, onError }: { hid: string; unit: UnitDto; on
   );
 }
 
+const threeDp = (n: number) => Math.abs(n * 1000 - Math.round(n * 1000)) < 1e-6;
+const isValidMinStock = (n: number) => Number.isFinite(n) && n >= 0 && threeDp(n);
+
+/** Inline minimum editor for a group, mirroring UnitStepEditor's hydrate/dirty/save pattern. */
+function GroupMinEditor({ hid, group, onError }: { hid: string; group: { id: string; minStock: number }; onError(msg: string): void }) {
+  const [updateGroup] = useUpdateGroupMutation();
+  const [value, setValue] = useState(String(group.minStock));
+  const hydratedFor = useRef<string | null>(null);
+  const dirtyRef = useRef(false);
+  const focusedRef = useRef(false);
+  const savingRef = useRef(false);
+
+  useEffect(() => {
+    if (hydratedFor.current !== group.id) {
+      hydratedFor.current = group.id;
+      dirtyRef.current = false;
+      setValue(String(group.minStock));
+      return;
+    }
+    if (!focusedRef.current && !dirtyRef.current) setValue(String(group.minStock));
+  }, [group.id, group.minStock]);
+
+  const save = async () => {
+    if (savingRef.current || !dirtyRef.current) return;
+    const n = Number(value);
+    if (!isValidMinStock(n)) {
+      dirtyRef.current = false;
+      setValue(String(group.minStock));
+      onError('Minimum must be 0 or more, with at most 3 decimal places');
+      return;
+    }
+    if (n === group.minStock) { dirtyRef.current = false; return; }
+    savingRef.current = true;
+    try { await updateGroup({ hid, id: group.id, minStock: n }).unwrap(); dirtyRef.current = false; }
+    catch (err) { dirtyRef.current = false; setValue(String(group.minStock)); onError(errorMessage(err)); }
+    finally { savingRef.current = false; }
+  };
+
+  return (
+    <input
+      className="input w-20"
+      type="number"
+      inputMode="decimal"
+      step={0.001}
+      min={0}
+      aria-label={`Minimum for ${group.id}`}
+      value={value}
+      onChange={(e) => { dirtyRef.current = true; setValue(e.target.value); }}
+      onFocus={() => { focusedRef.current = true; }}
+      onBlur={() => {
+        focusedRef.current = false;
+        if (!dirtyRef.current) { setValue(String(group.minStock)); return; }
+        void save();
+      }}
+      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); (e.target as HTMLInputElement).blur(); } }}
+    />
+  );
+}
+
 export function Settings() {
   const { hid = '' } = useParams();
   const navigate = useNavigate();
@@ -120,6 +180,11 @@ export function Settings() {
   const { data: units } = useGetUnitsQuery(hid); const [createUnit, createUnitState] = useCreateUnitMutation(); const [deleteUnit] = useDeleteUnitMutation();
   const { data: archived } = useGetArchivedItemsQuery(hid); const [unarchive] = useUnarchiveItemMutation();
   const [storeName, setStoreName] = useState(''); const [unitName, setUnitName] = useState(''); const [unitPlural, setUnitPlural] = useState(''); const [unitStep, setUnitStep] = useState('1');
+
+  // --- groups
+  const { data: groups } = useGetGroupsQuery(hid); const [createGroup, createGroupState] = useCreateGroupMutation(); const [deleteGroup] = useDeleteGroupMutation();
+  const { data: inventory } = useGetInventoryQuery(hid);
+  const [groupName, setGroupName] = useState(''); const [groupMin, setGroupMin] = useState('0'); const [groupStoreId, setGroupStoreId] = useState('');
 
   // --- notifications
   const { data: vapid } = useGetVapidKeyQuery(undefined, { skip: !me?.pushEnabled });
@@ -198,6 +263,38 @@ export function Settings() {
           <button className="btn-ghost" disabled={createUnitState.isLoading}>Add</button>
         </form>
         <p className="text-sm text-slate-500">Built-in units (each, oz, lb, can…) are always available.</p>
+      </Section>
+
+      <Section title="Groups">
+        <p className="text-sm text-slate-500">A group shares one minimum and one reminder across its members — e.g. 3 kinds of cat treats where only one needs to be in stock.</p>
+        <ul className="divide-y divide-slate-100">{groups?.map((g) => {
+          const memberNames = g.memberIds.map((id) => inventory?.find((i) => i.id === id)?.name ?? '…');
+          return (
+            <li key={g.id} className="space-y-1 py-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="min-w-0 flex-1 truncate font-medium">{g.name}{g.low && <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">low</span>}</span>
+                <label className="flex items-center gap-1 text-sm text-slate-500">min
+                  <GroupMinEditor hid={hid} group={g} onError={(msg) => toast.show({ message: msg })} />
+                </label>
+                <button aria-label={`Delete ${g.name}`} className="min-h-11 min-w-11 text-slate-400"
+                  onClick={() => { if (confirm(`Delete ${g.name}? Members are kept — they just leave the group.`)) void run(() => deleteGroup({ hid, id: g.id }).unwrap()); }}>✕</button>
+              </div>
+              <p className="text-sm text-slate-500">{memberNames.length === 0 ? 'No members yet' : memberNames.join(', ')}</p>
+            </li>
+          );
+        })}</ul>
+        <form className="flex flex-wrap gap-2" onSubmit={(e) => {
+          e.preventDefault();
+          void guardedRun('addGroup', async () => {
+            await createGroup({ hid, name: groupName, minStock: Number(groupMin) || 0, preferredStoreId: groupStoreId || null }).unwrap();
+            setGroupName(''); setGroupMin('0'); setGroupStoreId('');
+          });
+        }}>
+          <input className="input" placeholder="Cat treats" value={groupName} onChange={(e) => setGroupName(e.target.value)} required maxLength={120} aria-label="Group name" />
+          <input className="input w-20" type="number" inputMode="decimal" step={0.001} min={0} placeholder="0" value={groupMin} onChange={(e) => setGroupMin(e.target.value)} aria-label="Minimum" />
+          <select className="input w-28" value={groupStoreId} onChange={(e) => setGroupStoreId(e.target.value)} aria-label="Preferred store"><option value="">Any store</option>{stores?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select>
+          <button className="btn-ghost" disabled={createGroupState.isLoading}>Add</button>
+        </form>
       </Section>
 
       <Section title="Archived items">

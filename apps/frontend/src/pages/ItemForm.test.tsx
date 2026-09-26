@@ -17,7 +17,7 @@ const units = [
 const baseItem = {
   id: 'i1', name: 'Rice', description: null, category: null, unit: units[0], preferredStoreId: null, barcodes: [],
   renotifyAfterDays: 7, defaultRestockQty: 1, autoDeductQty: null, autoDeductPeriodDays: 1, autoDeductPaused: false,
-  archivedAt: null, currentCount: 3, minStock: 1, low: false, trackLow: true, nagging: false, lastRestockedAt: null, nextTripRowId: null,
+  archivedAt: null, currentCount: 3, minStock: 1, low: false, trackLow: true, nagging: false, groupId: null, lastRestockedAt: null, nextTripRowId: null,
   imageUrl: null, thumbUrl: null, imageUrlsExpireAt: null,
 } as ItemDto;
 
@@ -293,6 +293,46 @@ describe('ItemForm "Remind me when this runs low"', () => {
     renderForm('/h/h1/items/i1/edit', '/h/:hid/items/:id/edit', fetchMock);
     const checkbox = (await screen.findByRole('checkbox', { name: 'Remind me when this runs low' })) as HTMLInputElement;
     await vi.waitFor(() => expect(checkbox.checked).toBe(false));
+  });
+});
+
+describe('ItemForm group selection', () => {
+  const groups = [{ id: 'g1', name: 'Cat treats', minStock: 3, preferredStoreId: null, renotifyAfterDays: 7, memberIds: [], total: 0, low: false }];
+
+  it('sends groupId when a group is chosen', async () => {
+    let createdBody: unknown;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const u = url(input);
+      if (u.includes('/units')) return json(units);
+      if (u.includes('/stores')) return json([]);
+      if (u.includes('/groups')) return json(groups);
+      if (u.includes('/items') && (input as Request).method === 'POST') {
+        createdBody = JSON.parse(await (input as Request).text());
+        return json({ id: 'new1' });
+      }
+      return json(null);
+    });
+    renderForm('/h/h1/items/new', '/h/:hid/items/new', fetchMock);
+    await userEvent.type(await screen.findByLabelText('Name'), 'Salmon treats');
+    const select = (await screen.findByRole('combobox', { name: 'Group' })) as HTMLSelectElement;
+    await userEvent.selectOptions(select, 'g1');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await vi.waitFor(() => expect(createdBody).toBeDefined());
+    expect((createdBody as { groupId: string }).groupId).toBe('g1');
+  });
+
+  it('hydrates the selected group when editing', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const u = url(input);
+      if (u.includes('/units')) return json(units);
+      if (u.includes('/stores')) return json([]);
+      if (u.includes('/groups')) return json(groups);
+      if (u.includes('/items/i1')) return json({ ...baseItem, groupId: 'g1' });
+      return json(null);
+    });
+    renderForm('/h/h1/items/i1/edit', '/h/:hid/items/:id/edit', fetchMock);
+    const select = (await screen.findByRole('combobox', { name: 'Group' })) as HTMLSelectElement;
+    await vi.waitFor(() => expect(select.value).toBe('g1'));
   });
 });
 
