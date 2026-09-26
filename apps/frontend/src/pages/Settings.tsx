@@ -88,7 +88,7 @@ const threeDp = (n: number) => Math.abs(n * 1000 - Math.round(n * 1000)) < 1e-6;
 const isValidMinStock = (n: number) => Number.isFinite(n) && n >= 0 && threeDp(n);
 
 /** Inline minimum editor for a group, mirroring UnitStepEditor's hydrate/dirty/save pattern. */
-function GroupMinEditor({ hid, group, onError }: { hid: string; group: { id: string; minStock: number }; onError(msg: string): void }) {
+function GroupMinEditor({ hid, group, onError }: { hid: string; group: { id: string; name: string; minStock: number }; onError(msg: string): void }) {
   const [updateGroup] = useUpdateGroupMutation();
   const [value, setValue] = useState(String(group.minStock));
   const hydratedFor = useRef<string | null>(null);
@@ -129,7 +129,7 @@ function GroupMinEditor({ hid, group, onError }: { hid: string; group: { id: str
       inputMode="decimal"
       step={0.001}
       min={0}
-      aria-label={`Minimum for ${group.id}`}
+      aria-label={`Minimum for ${group.name}`}
       value={value}
       onChange={(e) => { dirtyRef.current = true; setValue(e.target.value); }}
       onFocus={() => { focusedRef.current = true; }}
