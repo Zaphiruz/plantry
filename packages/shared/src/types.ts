@@ -39,7 +39,7 @@ export type ShoppingEntry =
       rowId: string | null; currentCount: number; minStock: number; thumbUrl: string | null }
   | { kind: 'text'; rowId: string; name: string; quantity: number | null; checkedOff: boolean }
   | { kind: 'group'; groupId: string; name: string;
-      members: { itemId: string; name: string; currentCount: number; unit: UnitDto }[];
+      members: { itemId: string; name: string; currentCount: number; unit: UnitDto; trackLow: boolean }[];
       total: number; minStock: number; suggested: { itemId: string; quantity: number } };
 export interface ShoppingGroup { store: { id: string; name: string } | null; entries: ShoppingEntry[] }
 export interface ShoppingListDto { groups: ShoppingGroup[] }

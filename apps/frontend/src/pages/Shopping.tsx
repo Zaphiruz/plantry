@@ -80,7 +80,10 @@ function GroupEntryRow({ hid, entry }: { hid: string; entry: GroupEntry }) {
   };
 
   const suggestedName = entry.members.find((m) => m.itemId === entry.suggested.itemId)?.name ?? entry.name;
-  const inStock = entry.members.filter((m) => m.currentCount > 0).length;
+  // Match the backend's sum (groupTotals): untracked members don't count toward the group's
+  // total or its low/ok state, so they're excluded here too, both from the ratio and the picker.
+  const trackedMembers = entry.members.filter((m) => m.trackLow);
+  const inStock = trackedMembers.filter((m) => m.currentCount > 0).length;
   const press = useLongPress(() => setPicker(true), () => void buy(entry.suggested.itemId, suggestedName, entry.suggested.quantity));
 
   return (
@@ -89,7 +92,7 @@ function GroupEntryRow({ hid, entry }: { hid: string; entry: GroupEntry }) {
         aria-label={`Got ${suggestedName}, for ${entry.name}`}>
         <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-slate-300" />
         <span className="min-w-0 flex-1"><span className="block truncate font-medium">{entry.name}</span>
-          <span className="text-sm text-slate-500">{inStock} of {entry.members.length} in stock · buy {suggestedName}</span></span>
+          <span className="text-sm text-slate-500">{inStock} of {trackedMembers.length} in stock · buy {suggestedName}</span></span>
         <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800">low</span>
       </button>
 
@@ -100,7 +103,7 @@ function GroupEntryRow({ hid, entry }: { hid: string; entry: GroupEntry }) {
             <Dialog.Title className="text-lg font-semibold">Which one did you buy?</Dialog.Title>
             <Dialog.Description className="sr-only">Choose a member of {entry.name} and set the quantity.</Dialog.Description>
             <ul className="divide-y divide-slate-100">
-              {entry.members.map((m) => (
+              {trackedMembers.map((m) => (
                 <li key={m.itemId}>
                   <button type="button" className="flex min-h-14 w-full items-center justify-between gap-2 py-2 text-left"
                     onClick={() => {

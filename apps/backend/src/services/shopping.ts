@@ -74,7 +74,7 @@ export async function buildShoppingList(deps: Deps, hid: string): Promise<Shoppi
     if (!suggested) continue; // defensive: groupTotals already requires >=1 tracked member for `low`
     bucketFor(g.preferredStore).entries.push({
       kind: 'group', groupId: g.id, name: g.name,
-      members: g.items.map((i) => ({ itemId: i.id, name: i.name, currentCount: num(i.inventory!.currentCount), unit: toUnitDto(i.unit) })),
+      members: g.items.map((i) => ({ itemId: i.id, name: i.name, currentCount: num(i.inventory!.currentCount), unit: toUnitDto(i.unit), trackLow: i.trackLow })),
       total, minStock: num(g.minStock), suggested,
     });
   }

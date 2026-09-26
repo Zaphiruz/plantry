@@ -108,8 +108,8 @@ describe('Shopping screen', () => {
         entries: [{
           kind: 'group', groupId: 'g1', name: 'Cat treats',
           members: [
-            { itemId: 'i1', name: 'Beef', currentCount: 1, unit },
-            { itemId: 'i2', name: 'Chicken', currentCount: 0, unit },
+            { itemId: 'i1', name: 'Beef', currentCount: 1, unit, trackLow: true },
+            { itemId: 'i2', name: 'Chicken', currentCount: 0, unit, trackLow: true },
           ],
           total: 1, minStock: 2, suggested: { itemId: 'i2', quantity: 3 },
         }],
@@ -133,6 +133,43 @@ describe('Shopping screen', () => {
       const purchaseReq = fetchMock.mock.calls.map((c) => c[0] as Request).find((r) => r.url.includes('/shopping-list/items/i2/purchase'));
       expect(purchaseReq).toBeDefined();
     });
+  });
+
+  it('excludes untracked members from the "N of M in stock" count and the member picker', async () => {
+    const groupList: ShoppingListDto = {
+      groups: [{
+        store: null,
+        entries: [{
+          kind: 'group', groupId: 'g1', name: 'Cat treats',
+          members: [
+            { itemId: 'i1', name: 'Beef', currentCount: 1, unit, trackLow: true },
+            { itemId: 'i2', name: 'Chicken', currentCount: 0, unit, trackLow: true },
+            { itemId: 'i3', name: 'Ham (untracked)', currentCount: 99, unit, trackLow: false },
+          ],
+          total: 1, minStock: 2, suggested: { itemId: 'i2', quantity: 3 },
+        }],
+      }],
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const u = url(input);
+      if (u.includes('/shopping-list')) return json(groupList);
+      if (u.includes('/stores')) return json([]);
+      if (u.includes('/inventory')) return json([]);
+      if (u.includes('/purchase')) return json({ eventId: 'e1' });
+      return json(null);
+    });
+    renderShopping(fetchMock);
+
+    expect(await screen.findByText('Cat treats')).toBeInTheDocument();
+    // Matches the backend's sum (trackLow-only): 1 of 2, not 1 of 3.
+    expect(await screen.findByText(/1 of 2 in stock · buy Chicken/)).toBeInTheDocument();
+
+    fireEvent.pointerDown(screen.getByRole('button', { name: /Got Chicken/ }));
+    await new Promise((r) => setTimeout(r, 600)); // long-press threshold (500ms) to open the picker
+    await vi.waitFor(() => expect(screen.getByText('Which one did you buy?')).toBeInTheDocument());
+    expect(screen.getByText('Beef')).toBeInTheDocument();
+    expect(screen.getByText('Chicken')).toBeInTheDocument();
+    expect(screen.queryByText('Ham (untracked)')).not.toBeInTheDocument();
   });
 
   it('surfaces a toast when Undo fails', async () => {
