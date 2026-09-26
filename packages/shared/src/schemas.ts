@@ -47,6 +47,7 @@ const itemFields = {
   autoDeductPaused: z.boolean(),
   minStock: nonNegSchema,
   trackLow: z.boolean(),
+  groupId: uuid.nullish(),
 };
 export const itemCreateSchema = z.object({
   ...itemFields,
@@ -60,6 +61,19 @@ export const itemCreateSchema = z.object({
   currentCount: countSchema.default(0),
 }).strict();
 export const itemUpdateSchema = z.object(itemFields).partial().strict();
+
+const groupFields = {
+  name: nameSchema,
+  minStock: nonNegSchema,
+  preferredStoreId: uuid.nullish(),
+  renotifyAfterDays: z.number().int().min(1).max(365),
+};
+export const groupCreateSchema = z.object({
+  ...groupFields,
+  minStock: groupFields.minStock.default(0),
+  renotifyAfterDays: groupFields.renotifyAfterDays.default(7),
+}).strict();
+export const groupUpdateSchema = z.object(groupFields).partial().strict();
 
 export const restockSchema = z.object({ quantity: qtySchema, note: noteSchema }).strict();
 export const consumeSchema = z.object({ quantity: qtySchema.optional(), note: noteSchema }).strict();

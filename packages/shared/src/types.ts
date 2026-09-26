@@ -16,9 +16,15 @@ export interface ItemDto {
   autoDeductQty: number | null; autoDeductPeriodDays: number; autoDeductPaused: boolean;
   archivedAt: string | null;
   currentCount: number; minStock: number; low: boolean; trackLow: boolean; nagging: boolean;
+  groupId: string | null;
   lastRestockedAt: string | null;
   nextTripRowId: string | null;
   imageUrl: string | null; thumbUrl: string | null; imageUrlsExpireAt: string | null;
+}
+
+export interface GroupDto {
+  id: string; name: string; minStock: number; preferredStoreId: string | null;
+  renotifyAfterDays: number; memberIds: string[]; total: number; low: boolean;
 }
 
 export interface EventDto {
@@ -31,7 +37,10 @@ export interface RateDto { itemId: string; window: RateWindow; avgPerDay: number
 export type ShoppingEntry =
   | { kind: 'item'; itemId: string; name: string; unit: UnitDto; quantity: number; low: boolean; manual: boolean;
       rowId: string | null; currentCount: number; minStock: number; thumbUrl: string | null }
-  | { kind: 'text'; rowId: string; name: string; quantity: number | null; checkedOff: boolean };
+  | { kind: 'text'; rowId: string; name: string; quantity: number | null; checkedOff: boolean }
+  | { kind: 'group'; groupId: string; name: string;
+      members: { itemId: string; name: string; currentCount: number; unit: UnitDto }[];
+      total: number; minStock: number; suggested: { itemId: string; quantity: number } };
 export interface ShoppingGroup { store: { id: string; name: string } | null; entries: ShoppingEntry[] }
 export interface ShoppingListDto { groups: ShoppingGroup[] }
 export interface PurchaseResultDto { eventId: string }

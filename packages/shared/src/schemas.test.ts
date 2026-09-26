@@ -3,6 +3,7 @@ import {
   RATE_WINDOWS, windowDays, rateWindowSchema, restockSchema, consumeSchema,
   itemCreateSchema, itemUpdateSchema, shoppingAddSchema, photoUploadSchema,
   stepSchema, unitCreateSchema, unitUpdateSchema, barcodesSchema,
+  groupCreateSchema, groupUpdateSchema,
 } from './index.js';
 
 describe('rate windows', () => {
@@ -106,6 +107,25 @@ describe('items', () => {
   });
   it('update accepts an explicit barcodes list', () => {
     expect(itemUpdateSchema.parse({ barcodes: ['1', '2'] }).barcodes).toEqual(['1', '2']);
+  });
+  it('groupId is nullish on create and update', () => {
+    expect(itemCreateSchema.parse({ name: 'Cat food', unitId }).groupId).toBeUndefined();
+    const groupId = '7b0f7a3c-8a53-4bd1-9d0e-3f0a3d1f6a22';
+    expect(itemCreateSchema.parse({ name: 'Cat food', unitId, groupId }).groupId).toBe(groupId);
+    expect(itemUpdateSchema.parse({ groupId: null }).groupId).toBeNull();
+    expect(itemUpdateSchema.parse({}).groupId).toBeUndefined();
+  });
+});
+
+describe('groups', () => {
+  it('applies create defaults', () => {
+    expect(groupCreateSchema.parse({ name: 'Cat treats' })).toMatchObject({ name: 'Cat treats', minStock: 0, renotifyAfterDays: 7 });
+  });
+  it('update applies NO defaults', () => {
+    expect(groupUpdateSchema.parse({})).toEqual({});
+  });
+  it('rejects a negative minStock', () => {
+    expect(groupCreateSchema.safeParse({ name: 'x', minStock: -1 }).success).toBe(false);
   });
 });
 
