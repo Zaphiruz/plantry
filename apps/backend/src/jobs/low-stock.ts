@@ -1,9 +1,20 @@
 import type { PrismaClient } from '@prisma/client';
+import { num } from '../lib/num.js';
 import { lowItemsWhere } from '../scoped/inventory.js';
-import { groupItemInclude, groupTotals } from '../services/groups.js';
+import { groupItemInclude, groupTotals, type GroupFull } from '../services/groups.js';
 import type { PushService } from '../services/push.js';
 
 const DAY_MS = 86_400_000;
+
+// Same rounding as the frontend's formatQty, minus the unit label: a group's members can carry
+// different units, so its total/min are shown as bare numbers rather than in any one unit.
+const fmtNum = (n: number): string => String(Math.round(n * 1000) / 1000);
+
+function groupDigestLine(g: GroupFull): string {
+  const { total } = groupTotals(g);
+  const trackedCount = g.items.filter((i) => i.trackLow).length;
+  return `${g.name} (${trackedCount} item${trackedCount === 1 ? '' : 's'}, total ${fmtNum(total)} ≤ min ${fmtNum(num(g.minStock))})`;
+}
 
 export function digestBody(names: string[]): string {
   const n = names.length;
@@ -31,7 +42,7 @@ export async function runLowStockDigest(
       if (due.length === 0 && dueGroups.length === 0) continue;
       const names = [
         ...due.map((i) => i.name),
-        ...dueGroups.map((g) => `${g.name} (all ${g.items.filter((i) => i.trackLow).length} low)`),
+        ...dueGroups.map(groupDigestLine),
       ];
       const attempted = await push.sendToUsers(h.members.map((m) => m.userSub), {
         title: h.name, body: digestBody(names), url: `/h/${h.id}/shopping`,

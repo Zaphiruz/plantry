@@ -79,7 +79,7 @@ describe('low-stock digest', () => {
     await ctx.item(hid, { name: 'Salmon', count: 1, groupId: group.id });
     const r = await runLowStockDigest(ctx.prisma, ctx.push, NOW);
     expect(r).toEqual({ households: 1, items: 1, failed: 0 });
-    expect(ctx.push.sent[0]!.payload.body).toBe('1 item low — Cat treats (all 3 low)');
+    expect(ctx.push.sent[0]!.payload.body).toBe('1 item low — Cat treats (3 items, total 3 ≤ min 3)');
     expect((await ctx.prisma.itemGroup.findUniqueOrThrow({ where: { id: group.id } })).lastNotifiedAt!.toISOString()).toBe(NOW.toISOString());
   });
 
