@@ -2,7 +2,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import * as Dialog from '@radix-ui/react-dialog';
 import { type ItemDto } from '@plantry/shared';
-import { useConsumeMutation, useGetInventoryQuery, useLazyFindByBarcodeQuery, useRestockMutation, useUndoEventMutation } from '../api';
+import { useConsumeMutation, useGetGroupsQuery, useGetInventoryQuery, useLazyFindByBarcodeQuery, useRestockMutation, useUndoEventMutation } from '../api';
 import { ItemRow } from '../components/ItemRow';
 import { QueryError } from '../components/QueryError';
 import { Scanner } from '../components/Scanner';
@@ -17,6 +17,7 @@ export function Inventory() {
   const navigate = useNavigate();
   const toast = useToast();
   const { data: items, isLoading, isError, error, refetch } = useGetInventoryQuery(hid);
+  const { data: groups } = useGetGroupsQuery(hid);
   const [q, setQ] = useState('');
   const [category, setCategory] = useState<string | null>(null);
   const [lowOnly, setLowOnly] = useState(false);
@@ -48,6 +49,9 @@ export function Inventory() {
     if (m === 'use' || m === 'restock') {
       try {
         const hits = await findByBarcode({ hid, barcode: code }).unwrap();
+        // The user may have cancelled (or the mode may have changed) while the lookup was in
+        // flight — bail rather than restocking/consuming into a session that's no longer open.
+        if (modeRef.current !== m) return;
         const hit = hits[0];
         if (!hit) { closeScan(); navigate(`/h/${hid}/items/new?barcode=${encodeURIComponent(code)}`); return; }
         const quantity = m === 'restock' ? hit.defaultRestockQty : hit.unit.step;
@@ -68,6 +72,7 @@ export function Inventory() {
     setScanning(false);
     try {
       const hits = await findByBarcode({ hid, barcode: code }).unwrap();
+      if (modeRef.current !== m) return; // cancelled while the lookup was in flight
       if (hits[0]) setMatch(hits[0]); else navigate(`/h/${hid}/items/new?barcode=${encodeURIComponent(code)}`);
     } catch (err) { toast.show({ message: errorMessage(err) }); }
   }, [findByBarcode, hid, navigate, toast, restock, consume, undo]);
@@ -83,8 +88,12 @@ export function Inventory() {
   };
 
   const categories = useMemo(() => [...new Set((items ?? []).map((i) => i.category).filter((c): c is string => !!c))].sort(), [items]);
+  // Brief C: "Low" includes items nagging on their own, plus members of a low group — a grouped
+  // item's own `nagging` is always false (the group nags for it), so it needs a separate check.
+  const lowGroupIds = useMemo(() => new Set((groups ?? []).filter((g) => g.low).map((g) => g.id)), [groups]);
+  const isLowForFilter = (i: ItemDto) => i.nagging || (!!i.groupId && lowGroupIds.has(i.groupId));
   const shown = (items ?? []).filter((i) =>
-    (!q || i.name.toLowerCase().includes(q.toLowerCase())) && (!category || i.category === category) && (!lowOnly || i.nagging));
+    (!q || i.name.toLowerCase().includes(q.toLowerCase())) && (!category || i.category === category) && (!lowOnly || isLowForFilter(i)));
   const chip = (active: boolean) => `min-h-9 whitespace-nowrap rounded-full border px-3 text-sm ${active ? 'border-green-800 bg-green-800 text-white' : 'border-slate-300 bg-white'}`;
 
   return (

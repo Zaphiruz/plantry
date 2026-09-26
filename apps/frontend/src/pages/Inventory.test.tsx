@@ -37,6 +37,27 @@ function renderInventory(fetchMock: ReturnType<typeof vi.fn>) {
   );
 }
 
+describe('Inventory Low filter', () => {
+  it('includes members of a low group even though a grouped item never nags on its own', async () => {
+    const okItem = { ...item, id: 'i1', name: 'Rice', low: false, nagging: false, groupId: null };
+    const groupedItem = { ...item, id: 'i2', name: 'Salmon', low: true, nagging: false, groupId: 'g1' };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = u(input);
+      if (url.includes('/groups')) return json([{ id: 'g1', name: 'Treats', minStock: 2, preferredStoreId: null, renotifyAfterDays: 7, memberIds: ['i2'], total: 1, low: true }]);
+      if (url.includes('/inventory')) return json([okItem, groupedItem]);
+      return json([]);
+    });
+    renderInventory(fetchMock);
+
+    await screen.findByText('Rice');
+    await screen.findByText('Salmon');
+    await userEvent.click(screen.getByRole('button', { name: 'Low' }));
+
+    expect(screen.getByText('Salmon')).toBeInTheDocument();
+    expect(screen.queryByText('Rice')).not.toBeInTheDocument();
+  });
+});
+
 describe('Inventory query errors', () => {
   it('shows the error and a retry button instead of a permanent Loading…', async () => {
     renderInventory(vi.fn(async () => boom()));
@@ -85,6 +106,7 @@ function scanFetchMock(opts: { hit?: ItemDto | null; eventId?: string | null; st
     const url = u(input);
     const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
     if (url.includes('/inventory') && !url.includes('/consume') && !url.includes('/restock') && method === 'GET') return json([scanItem]);
+    if (url.includes('/groups')) return json([]);
     if (url.includes('/items?barcode=')) return json(hit ? [hit] : []);
     if (url.includes('/consume') || url.includes('/restock')) {
       if (stockFails) return boom();
@@ -151,6 +173,35 @@ describe('Inventory continuous scan mode', () => {
 
     await screen.findByText('Internal error');
     expect(screen.getByTestId('scanner-mock')).toBeInTheDocument();
+  });
+
+  it('cancelling the scan session while findByBarcode is in flight bails: no restock/consume, no navigation', async () => {
+    let resolveFind: ((v: Response) => void) | undefined;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = u(input);
+      const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
+      if (url.includes('/inventory') && !url.includes('/consume') && !url.includes('/restock') && method === 'GET') return json([scanItem]);
+      if (url.includes('/groups')) return json([]);
+      if (url.includes('/items?barcode=')) return new Promise<Response>((resolve) => { resolveFind = resolve; });
+      return json({});
+    });
+    renderInventory(fetchMock);
+    await screen.findByText('Cat food');
+    await userEvent.click(screen.getByRole('button', { name: 'Scan to use' }));
+
+    const detectPromise = scannerProps!.onDetected('CODE9');
+    await vi.waitFor(() => expect(resolveFind).toBeDefined());
+    // Cancel the scan session (e.g. tapping Cancel in the Scanner) while the lookup is pending —
+    // flushed synchronously so the resulting setMode(null) commits (and modeRef syncs) before we
+    // resume the pending onDetected call below.
+    act(() => { scannerProps!.onClose(); });
+    resolveFind!(json([scanItem]));
+    await act(async () => { await detectPromise; });
+
+    const stockReq = fetchMock.mock.calls.map((c) => c[0] as Request).find((req) => req.url.includes('/restock') || req.url.includes('/consume'));
+    expect(stockReq).toBeUndefined();
+    expect(screen.queryByText('New item page')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Added .* Cat food/)).not.toBeInTheDocument();
   });
 
   it('keeps a stable onDetected identity across a forced re-render', async () => {

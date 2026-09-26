@@ -73,4 +73,37 @@ describe('Layout', () => {
     expect(await screen.findByText('Inventory content')).toBeInTheDocument();
     expect(screen.queryByText('Household picker')).not.toBeInTheDocument();
   });
+
+  it('badges Shopping with nagging items plus low groups (Brief C)', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const u = url(input);
+      if (u.includes('/api/me')) return json(meWithoutH2);
+      if (u.includes('/inventory')) {
+        return json([
+          { id: 'i1', name: 'Rice', currentCount: 0, minStock: 1, low: true, trackLow: true, nagging: true, groupId: null },
+          { id: 'i2', name: 'Beef', currentCount: 0, minStock: 1, low: true, trackLow: true, nagging: false, groupId: 'g1' },
+        ]);
+      }
+      if (u.includes('/groups')) {
+        return json([{ id: 'g1', name: 'Treats', minStock: 1, preferredStoreId: null, renotifyAfterDays: 7, memberIds: ['i2'], total: 0, low: true }]);
+      }
+      return json(null);
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <Provider store={makeStore()}>
+        <MemoryRouter initialEntries={['/h/h1']} future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+          <Routes>
+            <Route path="/h/:hid" element={<Layout />}>
+              <Route index element={<p>Inventory content</p>} />
+            </Route>
+            <Route path="/" element={<p>Household picker</p>} />
+          </Routes>
+        </MemoryRouter>
+      </Provider>,
+    );
+
+    expect(await screen.findByText('2')).toBeInTheDocument();
+  });
 });
