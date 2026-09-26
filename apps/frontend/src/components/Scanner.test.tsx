@@ -100,3 +100,82 @@ describe('Scanner camera teardown', () => {
     await waitFor(() => expect(stop).toHaveBeenCalledTimes(1));
   });
 });
+
+describe('Scanner continuous mode', () => {
+  it('stays open (camera not torn down) after a detection', async () => {
+    const stop = vi.fn();
+    const onDetected = vi.fn(async () => {});
+    vi.stubGlobal('navigator', { ...navigator, mediaDevices: { getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop }] })) } });
+    vi.stubGlobal('BarcodeDetector', class { detect = vi.fn(async () => [{ rawValue: 'A1' }]); });
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+
+    render(<Scanner open continuous onDetected={onDetected} onClose={() => {}} />);
+
+    await waitFor(() => expect(onDetected).toHaveBeenCalledWith('A1'));
+    expect(stop).not.toHaveBeenCalled();
+    expect(document.querySelector('video')).not.toBeNull();
+  });
+
+  it('debounces the same code for a period so a held barcode does not fire repeatedly', async () => {
+    const onDetected = vi.fn(async () => {});
+    vi.stubGlobal('navigator', { ...navigator, mediaDevices: { getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop: vi.fn() }] })) } });
+    vi.stubGlobal('BarcodeDetector', class { detect = vi.fn(async () => [{ rawValue: 'A1' }]); });
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+
+    render(<Scanner open continuous onDetected={onDetected} onClose={() => {}} />);
+
+    await waitFor(() => expect(onDetected).toHaveBeenCalledTimes(1));
+    // Give the detection loop several more ticks; the same code must stay debounced.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(onDetected).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores new detections while the previous onDetected promise is pending', async () => {
+    // gate1 unblocks after the first hit; gate2 is never resolved, so once the second hit lands
+    // the scanner is permanently "busy" again — this keeps the tick loop from running away
+    // instead of racing an arbitrary real-time wait against however many ticks fire.
+    const gate1 = deferred<void>();
+    const gate2 = deferred<void>();
+    const onDetected = vi.fn().mockImplementationOnce(() => gate1.promise).mockImplementation(() => gate2.promise);
+    let call = 0;
+    vi.stubGlobal('navigator', { ...navigator, mediaDevices: { getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop: vi.fn() }] })) } });
+    // Alternate codes so debounce-by-code alone would not explain a single call.
+    vi.stubGlobal('BarcodeDetector', class { detect = vi.fn(async () => [{ rawValue: (call++ % 2 === 0) ? 'A1' : 'B2' }]); });
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+
+    render(<Scanner open continuous onDetected={onDetected} onClose={() => {}} />);
+
+    await waitFor(() => expect(onDetected).toHaveBeenCalledTimes(1));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(onDetected).toHaveBeenCalledTimes(1); // still pending — B2 must be ignored too
+
+    gate1.resolve();
+    await waitFor(() => expect(onDetected).toHaveBeenCalledTimes(2));
+    // Busy again (gate2 never resolves) — further ticks must not fire a third call.
+    await new Promise((r) => setTimeout(r, 30));
+    expect(onDetected).toHaveBeenCalledTimes(2);
+  });
+
+  it('still tears down the camera on close even in continuous mode', async () => {
+    const stop = vi.fn();
+    vi.stubGlobal('navigator', { ...navigator, mediaDevices: { getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop }] })) } });
+    vi.stubGlobal('BarcodeDetector', class { detect = vi.fn(async () => []); });
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+
+    const { rerender } = render(<Scanner open continuous onDetected={() => {}} onClose={() => {}} />);
+    await waitFor(() => expect(document.querySelector('video')).not.toBeNull());
+    rerender(<Scanner open={false} continuous onDetected={() => {}} onClose={() => {}} />);
+
+    await waitFor(() => expect(stop).toHaveBeenCalledTimes(1));
+  });
+
+  it('renders the status line when provided', async () => {
+    vi.stubGlobal('navigator', { ...navigator, mediaDevices: { getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop: vi.fn() }] })) } });
+    vi.stubGlobal('BarcodeDetector', class { detect = vi.fn(async () => []); });
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+
+    render(<Scanner open continuous status="Ready — scan the next item" onDetected={() => {}} onClose={() => {}} />);
+
+    expect(await screen.findByText('Ready — scan the next item')).toBeInTheDocument();
+  });
+});

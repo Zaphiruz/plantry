@@ -2,12 +2,15 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import * as Dialog from '@radix-ui/react-dialog';
 import { type ItemDto } from '@plantry/shared';
-import { useConsumeMutation, useGetInventoryQuery, useLazyFindByBarcodeQuery, useRestockMutation } from '../api';
+import { useConsumeMutation, useGetInventoryQuery, useLazyFindByBarcodeQuery, useRestockMutation, useUndoEventMutation } from '../api';
 import { ItemRow } from '../components/ItemRow';
 import { QueryError } from '../components/QueryError';
 import { Scanner } from '../components/Scanner';
 import { useToast } from '../components/Toast';
 import { errorMessage, formatQty } from '../lib/format';
+
+type ScanMode = 'lookup' | 'use' | 'restock';
+const READY_STATUS = 'Ready — scan the next item';
 
 export function Inventory() {
   const { hid = '' } = useParams();
@@ -18,18 +21,56 @@ export function Inventory() {
   const [category, setCategory] = useState<string | null>(null);
   const [lowOnly, setLowOnly] = useState(false);
   const [scanning, setScanning] = useState(false);
+  const [mode, setMode] = useState<ScanMode | null>(null);
+  const [status, setStatus] = useState(READY_STATUS);
   const [match, setMatch] = useState<ItemDto | null>(null);
   const [findByBarcode] = useLazyFindByBarcodeQuery();
-  const [restock] = useRestockMutation(); const [consume] = useConsumeMutation();
+  const [restock] = useRestockMutation(); const [consume] = useConsumeMutation(); const [undo] = useUndoEventMutation();
   const quickBusy = useRef(false);
+  // Read from onDetected without depending on `mode` in its own deps, so the Scanner's camera
+  // effect (keyed off onDetected's identity) doesn't tear down and reacquire when a scan
+  // session starts/ends — only the explicit open/close toggles it.
+  const modeRef = useRef<ScanMode | null>(null);
+  modeRef.current = mode;
+  // Per-item apply count for this scan session, shown in the status line ("Applied: X ×n").
+  const tallyRef = useRef<Map<string, number>>(new Map());
+
+  const startScan = (m: ScanMode) => {
+    tallyRef.current = new Map();
+    setStatus(READY_STATUS);
+    setMode(m);
+    setScanning(true);
+  };
+  const closeScan = () => { setScanning(false); setMode(null); };
 
   const onDetected = useCallback(async (code: string) => {
+    const m = modeRef.current;
+    if (m === 'use' || m === 'restock') {
+      try {
+        const hits = await findByBarcode({ hid, barcode: code }).unwrap();
+        const hit = hits[0];
+        if (!hit) { closeScan(); navigate(`/h/${hid}/items/new?barcode=${encodeURIComponent(code)}`); return; }
+        const quantity = m === 'restock' ? hit.defaultRestockQty : hit.unit.step;
+        const r = await (m === 'restock' ? restock : consume)({ hid, itemId: hit.id, quantity }).unwrap();
+        const eventId = r.eventId;
+        const count = (tallyRef.current.get(hit.id) ?? 0) + 1;
+        tallyRef.current.set(hit.id, count);
+        setStatus(`Applied: ${hit.name} ×${count}`);
+        navigator.vibrate?.(30);
+        toast.show({
+          message: `${m === 'restock' ? 'Added' : 'Used'} ${formatQty(quantity, hit.unit)} · ${hit.name}`,
+          ...(eventId ? { actionLabel: 'Undo', onAction: () => { undo({ hid, eventId }).unwrap().catch((err) => toast.show({ message: errorMessage(err) })); } } : {}),
+          durationMs: 6000,
+        });
+      } catch (err) { toast.show({ message: errorMessage(err) }); }
+      return;
+    }
     setScanning(false);
     try {
       const hits = await findByBarcode({ hid, barcode: code }).unwrap();
       if (hits[0]) setMatch(hits[0]); else navigate(`/h/${hid}/items/new?barcode=${encodeURIComponent(code)}`);
     } catch (err) { toast.show({ message: errorMessage(err) }); }
-  }, [findByBarcode, hid, navigate, toast]);
+  }, [findByBarcode, hid, navigate, toast, restock, consume, undo]);
 
   const quick = async (kind: 'restock' | 'consume') => {
     if (!match || quickBusy.current) return;
@@ -49,9 +90,11 @@ export function Inventory() {
   return (
     <div>
       <div className="sticky top-[57px] z-20 space-y-2 bg-slate-50 p-3">
-        <div className="flex gap-2" id="inventory-toolbar">
+        <div className="flex flex-wrap gap-2" id="inventory-toolbar">
           <input className="input" type="search" placeholder="Search items" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search items" />
-          <button type="button" className="btn-ghost whitespace-nowrap" onClick={() => setScanning(true)}>Scan</button>
+          <button type="button" aria-label="Scan to look up" className="btn-ghost whitespace-nowrap" onClick={() => startScan('lookup')}>Scan</button>
+          <button type="button" aria-label="Scan to use" className="btn-ghost whitespace-nowrap" onClick={() => startScan('use')}>Scan · Use</button>
+          <button type="button" aria-label="Scan to restock" className="btn-ghost whitespace-nowrap" onClick={() => startScan('restock')}>Scan · Restock</button>
           <Link to={`/h/${hid}/items/new`} className="btn-primary whitespace-nowrap">+ New</Link>
         </div>
         <div className="flex gap-2 overflow-x-auto">
@@ -63,7 +106,7 @@ export function Inventory() {
       {isError && <QueryError error={error} onRetry={() => void refetch()} />}
       {items && items.length === 0 &&<p className="p-8 text-center text-slate-500">Nothing here yet. Add your first item.</p>}
       <ul>{shown.map((i) => <ItemRow key={i.id} hid={hid} item={i} />)}</ul>
-      <Scanner open={scanning} onDetected={onDetected} onClose={() => setScanning(false)} />
+      <Scanner open={scanning} continuous={mode === 'use' || mode === 'restock'} status={status} onDetected={onDetected} onClose={closeScan} />
       <Dialog.Root open={!!match} onOpenChange={(o) => !o && setMatch(null)}>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-40 bg-black/40" />
