@@ -46,8 +46,8 @@ export function ItemRow({ hid, item }: { hid: string; item: ItemDto }) {
           : <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-slate-100 text-slate-400">{item.name[0]?.toUpperCase()}</span>}
         <span className="min-w-0">
           <span className="block truncate font-medium">{item.name}</span>
-          <span className={`text-sm ${item.low ? 'font-semibold text-red-700' : 'text-slate-500'}`}>
-            {formatQty(item.currentCount, item.unit)}{item.low && ' · low'}
+          <span className={`text-sm ${item.nagging ? 'font-semibold text-red-700' : 'text-slate-500'}`}>
+            {formatQty(item.currentCount, item.unit)}{item.nagging && ' · low'}
           </span>
         </span>
       </Link>

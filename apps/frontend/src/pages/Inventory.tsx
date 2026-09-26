@@ -43,7 +43,7 @@ export function Inventory() {
 
   const categories = useMemo(() => [...new Set((items ?? []).map((i) => i.category).filter((c): c is string => !!c))].sort(), [items]);
   const shown = (items ?? []).filter((i) =>
-    (!q || i.name.toLowerCase().includes(q.toLowerCase())) && (!category || i.category === category) && (!lowOnly || i.low));
+    (!q || i.name.toLowerCase().includes(q.toLowerCase())) && (!category || i.category === category) && (!lowOnly || i.nagging));
   const chip = (active: boolean) => `min-h-9 whitespace-nowrap rounded-full border px-3 text-sm ${active ? 'border-green-800 bg-green-800 text-white' : 'border-slate-300 bg-white'}`;
 
   return (

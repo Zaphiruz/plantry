@@ -22,7 +22,7 @@ export function Layout() {
   // household invalidates the "Me" tag) — the cached list is briefly stale and would
   // otherwise bounce the user straight back to "/" before the new household appears.
   if (me && !meFetching && !me.households.some((h) => h.id === hid)) return <Navigate to="/" replace />;
-  const lowCount = items?.filter((i) => i.low).length ?? 0;
+  const lowCount = items?.filter((i) => i.nagging).length ?? 0;
   const tab = ({ isActive }: { isActive: boolean }) =>
     `flex min-h-14 flex-1 items-center justify-center gap-1 text-sm font-medium ${isActive ? 'text-green-800' : 'text-slate-500'}`;
 

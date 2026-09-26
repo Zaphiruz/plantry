@@ -17,7 +17,7 @@ const units = [
 const baseItem = {
   id: 'i1', name: 'Rice', description: null, category: null, unit: units[0], preferredStoreId: null, barcodes: [],
   renotifyAfterDays: 7, defaultRestockQty: 1, autoDeductQty: null, autoDeductPeriodDays: 1, autoDeductPaused: false,
-  archivedAt: null, currentCount: 3, minStock: 1, low: false, lastRestockedAt: null, nextTripRowId: null,
+  archivedAt: null, currentCount: 3, minStock: 1, low: false, trackLow: true, nagging: false, lastRestockedAt: null, nextTripRowId: null,
   imageUrl: null, thumbUrl: null, imageUrlsExpireAt: null,
 } as ItemDto;
 
@@ -237,6 +237,62 @@ describe('ItemForm barcode chip list', () => {
 
     await vi.waitFor(() => expect(createdBody).toBeDefined());
     expect((createdBody as { barcodes: string[] }).barcodes).toEqual(['111', '222']);
+  });
+});
+
+describe('ItemForm "Remind me when this runs low"', () => {
+  it('defaults on for a new item and sends trackLow: true when untouched', async () => {
+    let createdBody: unknown;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const u = url(input);
+      if (u.includes('/units')) return json(units);
+      if (u.includes('/stores')) return json([]);
+      if (u.includes('/items') && (input as Request).method === 'POST') {
+        createdBody = JSON.parse(await (input as Request).text());
+        return json({ id: 'new1' });
+      }
+      return json(null);
+    });
+    renderForm('/h/h1/items/new', '/h/:hid/items/new', fetchMock);
+    const checkbox = (await screen.findByRole('checkbox', { name: 'Remind me when this runs low' })) as HTMLInputElement;
+    expect(checkbox.checked).toBe(true);
+    await userEvent.type(await screen.findByLabelText('Name'), 'Cat food');
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await vi.waitFor(() => expect(createdBody).toBeDefined());
+    expect((createdBody as { trackLow: boolean }).trackLow).toBe(true);
+  });
+
+  it('unchecking it sends trackLow: false', async () => {
+    let createdBody: unknown;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const u = url(input);
+      if (u.includes('/units')) return json(units);
+      if (u.includes('/stores')) return json([]);
+      if (u.includes('/items') && (input as Request).method === 'POST') {
+        createdBody = JSON.parse(await (input as Request).text());
+        return json({ id: 'new1' });
+      }
+      return json(null);
+    });
+    renderForm('/h/h1/items/new', '/h/:hid/items/new', fetchMock);
+    await userEvent.type(await screen.findByLabelText('Name'), 'Cat food');
+    await userEvent.click(await screen.findByRole('checkbox', { name: 'Remind me when this runs low' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await vi.waitFor(() => expect(createdBody).toBeDefined());
+    expect((createdBody as { trackLow: boolean }).trackLow).toBe(false);
+  });
+
+  it('hydrates from the existing item when editing', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const u = url(input);
+      if (u.includes('/units')) return json(units);
+      if (u.includes('/stores')) return json([]);
+      if (u.includes('/items/i1')) return json({ ...baseItem, trackLow: false });
+      return json(null);
+    });
+    renderForm('/h/h1/items/i1/edit', '/h/:hid/items/:id/edit', fetchMock);
+    const checkbox = (await screen.findByRole('checkbox', { name: 'Remind me when this runs low' })) as HTMLInputElement;
+    await vi.waitFor(() => expect(checkbox.checked).toBe(false));
   });
 });
 

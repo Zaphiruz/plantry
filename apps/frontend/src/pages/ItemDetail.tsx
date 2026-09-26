@@ -119,7 +119,8 @@ export function ItemDetail() {
         {!archived && <PhotoPicker hid={hid} item={item} />}
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-xl font-semibold">{item.name}</h1>
-          <p className={item.low ? 'font-semibold text-red-700' : 'text-slate-600'}>{formatQty(item.currentCount, item.unit)} · keep at least {formatQty(item.minStock, item.unit)}</p>
+          <p className={item.low && item.trackLow ? 'font-semibold text-red-700' : 'text-slate-600'}>{formatQty(item.currentCount, item.unit)} · keep at least {formatQty(item.minStock, item.unit)}</p>
+          {item.low && !item.trackLow && <p className="text-sm text-slate-500">Low — reminders off</p>}
           {archived && <p className="text-sm font-medium text-amber-700">Archived</p>}
           {item.description && <p className="mt-1 text-sm text-slate-500">{item.description}</p>}
           <p className="mt-1 font-mono text-xs text-slate-500">{item.barcodes.length > 0 ? item.barcodes.join(', ') : 'No barcodes'}</p>

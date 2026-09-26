@@ -25,7 +25,7 @@ vi.mock('../components/Scanner', () => ({
 const unit: UnitDto = { id: 'u1', name: 'unit', pluralName: 'units', abbreviation: null, global: true, step: 1 };
 const item = {
   id: 'i1', name: 'Rice', description: null, category: null, unit, preferredStoreId: null, barcodes: [],
-  currentCount: 3, minStock: 1, low: false, defaultRestockQty: 1, renotifyAfterDays: 3,
+  currentCount: 3, minStock: 1, low: false, trackLow: true, nagging: false, defaultRestockQty: 1, renotifyAfterDays: 3,
   autoDeductQty: null, autoDeductPeriodDays: 1, autoDeductPaused: false, archivedAt: null,
   photoUrl: null, thumbUrl: null, nextTripRowId: null,
 } as unknown as ItemDto;
