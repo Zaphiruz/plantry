@@ -71,6 +71,43 @@ describe('shopping list', () => {
     expect((await ctx.call(u, 'GET', `${base}/shopping-list`)).body.data.groups[0].entries[0].low).toBe(true);
   });
 
+  it('a low group renders one entry with members + suggested (most recently restocked, else first by name)', async () => {
+    const u = await ctx.user(); const hid = await ctx.household(u); const base = `/api/households/${hid}`;
+    const group = (await ctx.call(u, 'POST', `${base}/groups`, { name: 'Cat treats', minStock: 3 })).body.data;
+    await ctx.item(hid, { name: 'Beef', count: 1, groupId: group.id, defaultRestockQty: 2 });
+    const chicken = await ctx.item(hid, { name: 'Chicken', count: 1, groupId: group.id, defaultRestockQty: 5 });
+    await ctx.call(u, 'POST', `${base}/inventory/${chicken.id}/restock`, { quantity: 1 }); // most recently restocked
+
+    const groups = (await ctx.call(u, 'GET', `${base}/shopping-list`)).body.data.groups;
+    expect(groups).toHaveLength(1);
+    const entry = groups[0].entries[0];
+    expect(entry.kind).toBe('group');
+    expect(entry).toMatchObject({ name: 'Cat treats', total: 3, minStock: 3, suggested: { itemId: chicken.id, quantity: 5 } });
+    expect(entry.members.map((m: any) => m.name).sort()).toEqual(['Beef', 'Chicken']);
+  });
+
+  it('a group not low is absent; purchasing the suggested member removes the line once total > min', async () => {
+    const u = await ctx.user(); const hid = await ctx.household(u); const base = `/api/households/${hid}`;
+    const group = (await ctx.call(u, 'POST', `${base}/groups`, { name: 'Cat treats', minStock: 2 })).body.data;
+    const a = await ctx.item(hid, { name: 'Beef', count: 1, groupId: group.id, defaultRestockQty: 4 });
+    await ctx.item(hid, { name: 'Chicken', count: 0, groupId: group.id });
+
+    expect((await ctx.call(u, 'GET', `${base}/shopping-list`)).body.data.groups[0].entries[0].kind).toBe('group');
+    const r = await ctx.call(u, 'POST', `${base}/shopping-list/items/${a.id}/purchase`);
+    expect(r.status).toBe(200); // reuses the existing purchase route with the suggested member's itemId
+    expect((await ctx.call(u, 'GET', `${base}/shopping-list`)).body.data.groups).toEqual([]);
+  });
+
+  it('an untracked member never becomes the suggestion and is excluded from the low sum', async () => {
+    const u = await ctx.user(); const hid = await ctx.household(u); const base = `/api/households/${hid}`;
+    const group = (await ctx.call(u, 'POST', `${base}/groups`, { name: 'Cat treats', minStock: 1 })).body.data;
+    await ctx.item(hid, { name: 'Beef', count: 0, groupId: group.id, trackLow: false, defaultRestockQty: 99 });
+    await ctx.item(hid, { name: 'Chicken', count: 0, groupId: group.id, defaultRestockQty: 3 });
+    const entry = (await ctx.call(u, 'GET', `${base}/shopping-list`)).body.data.groups[0].entries[0];
+    expect(entry.total).toBe(0);
+    expect(entry.suggested.quantity).toBe(3);
+  });
+
   it('free-text rows toggle checked_off and never touch inventory; linked rows cannot be PATCHed', async () => {
     const u = await ctx.user(); const hid = await ctx.household(u); const base = `/api/households/${hid}`;
     const row = (await ctx.call(u, 'POST', `${base}/shopping-list-items`, { name: 'Candles' })).body.data;

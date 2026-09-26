@@ -44,6 +44,21 @@ describe('applyEvent', () => {
     expect(inv.lastNotifiedAt).toBeNull();
     expect(inv.lastRestockedAt).not.toBeNull();
   });
+
+  it('restocking a grouped member clears the GROUP\'s last_notified_at once the total recovers', async () => {
+    const u = await ctx.user(); const hid = await ctx.household(u);
+    const group = await ctx.group(hid, { name: 'Treats', minStock: 2 });
+    const a = await ctx.item(hid, { count: 1, groupId: group.id });
+    await ctx.item(hid, { count: 0, groupId: group.id });
+    await ctx.prisma.itemGroup.update({ where: { id: group.id }, data: { lastNotifiedAt: new Date() } });
+
+    const run = (q: number) => ctx.prisma.$transaction((tx) =>
+      applyEvent(tx, { itemId: a.id, householdId: hid, eventType: 'restock', quantity: q, userSub: u.sub }));
+    await run(0.5); // total 1.5 <= min 2 → still low → keep
+    expect((await ctx.prisma.itemGroup.findUniqueOrThrow({ where: { id: group.id } })).lastNotifiedAt).not.toBeNull();
+    await run(1); // total 2.5 > 2 → clear
+    expect((await ctx.prisma.itemGroup.findUniqueOrThrow({ where: { id: group.id } })).lastNotifiedAt).toBeNull();
+  });
 });
 
 describe('undoEvent', () => {

@@ -71,6 +71,41 @@ describe('low-stock digest', () => {
     expect(await notified(a.id)).toBeNull();
   });
 
+  it('includes one line per low group, with cadence and last_notified_at like items', async () => {
+    const o = await ctx.user(); const hid = await ctx.household(o, 'Casa');
+    const group = await ctx.group(hid, { name: 'Cat treats', minStock: 3 });
+    await ctx.item(hid, { name: 'Beef', count: 1, groupId: group.id });
+    await ctx.item(hid, { name: 'Chicken', count: 1, groupId: group.id });
+    await ctx.item(hid, { name: 'Salmon', count: 1, groupId: group.id });
+    const r = await runLowStockDigest(ctx.prisma, ctx.push, NOW);
+    expect(r).toEqual({ households: 1, items: 1, failed: 0 });
+    expect(ctx.push.sent[0]!.payload.body).toBe('1 item low — Cat treats (all 3 low)');
+    expect((await ctx.prisma.itemGroup.findUniqueOrThrow({ where: { id: group.id } })).lastNotifiedAt!.toISOString()).toBe(NOW.toISOString());
+  });
+
+  it('honours a group renotify_after_days cadence independent of items', async () => {
+    const o = await ctx.user(); const hid = await ctx.household(o);
+    const group = await ctx.group(hid, { name: 'Treats', minStock: 5, renotifyAfterDays: 1 });
+    await ctx.item(hid, { name: 'Beef', count: 0, groupId: group.id });
+    await ctx.prisma.itemGroup.update({ where: { id: group.id }, data: { lastNotifiedAt: daysAgo(2) } });
+    await runLowStockDigest(ctx.prisma, ctx.push, NOW);
+    expect((await ctx.prisma.itemGroup.findUniqueOrThrow({ where: { id: group.id } })).lastNotifiedAt!.toISOString()).toBe(NOW.toISOString());
+
+    const weekly = await ctx.group(hid, { name: 'Weekly', minStock: 5 });
+    await ctx.item(hid, { name: 'Salmon', count: 0, groupId: weekly.id });
+    await ctx.prisma.itemGroup.update({ where: { id: weekly.id }, data: { lastNotifiedAt: daysAgo(2) } });
+    await runLowStockDigest(ctx.prisma, ctx.push, NOW);
+    expect((await ctx.prisma.itemGroup.findUniqueOrThrow({ where: { id: weekly.id } })).lastNotifiedAt!.toISOString()).toBe(daysAgo(2).toISOString());
+  });
+
+  it('a group with no low members is not in the digest', async () => {
+    const o = await ctx.user(); const hid = await ctx.household(o);
+    const group = await ctx.group(hid, { name: 'Fine', minStock: 1 });
+    await ctx.item(hid, { name: 'Beef', count: 9, groupId: group.id });
+    const r = await runLowStockDigest(ctx.prisma, ctx.push, NOW);
+    expect(r).toEqual({ households: 0, items: 0, failed: 0 });
+  });
+
   it('isolates a per-household push failure so other households still get digested', async () => {
     const oa = await ctx.user(); const hidA = await ctx.household(oa, 'Alpha');
     const itemA = await ctx.item(hidA, { count: 0, min: 1 });

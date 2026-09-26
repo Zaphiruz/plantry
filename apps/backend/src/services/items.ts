@@ -34,7 +34,9 @@ export async function serializeItem(i: ItemFull, storage?: Storage): Promise<Ite
     autoDeductPaused: i.autoDeductPaused,
     archivedAt: i.archivedAt?.toISOString() ?? null,
     currentCount, minStock, low: currentCount <= minStock, trackLow: i.trackLow,
-    nagging: currentCount <= minStock && i.trackLow,
+    // A grouped item never nags on its own — the GROUP is the unit that nags for it.
+    nagging: currentCount <= minStock && i.trackLow && !i.groupId,
+    groupId: i.groupId,
     lastRestockedAt: inv.lastRestockedAt?.toISOString() ?? null,
     nextTripRowId: i.listRows[0]?.id ?? null,
     ...(await imageUrls(i.imageRef, storage)),

@@ -1,5 +1,6 @@
 import type { PrismaClient } from '@prisma/client';
 import { lowItemsWhere } from '../scoped/inventory.js';
+import { groupItemInclude, groupTotals } from '../services/groups.js';
 import type { PushService } from '../services/push.js';
 
 const DAY_MS = 86_400_000;
@@ -24,13 +25,21 @@ export async function runLowStockDigest(
         const last = i.inventory!.lastNotifiedAt;
         return !last || now.getTime() - last.getTime() >= i.renotifyAfterDays * DAY_MS;
       });
-      if (due.length === 0) continue;
+      const groups = (await prisma.itemGroup.findMany({ where: { householdId: h.id }, include: groupItemInclude, orderBy: { name: 'asc' } }))
+        .filter((g) => groupTotals(g).low);
+      const dueGroups = groups.filter((g) => !g.lastNotifiedAt || now.getTime() - g.lastNotifiedAt.getTime() >= g.renotifyAfterDays * DAY_MS);
+      if (due.length === 0 && dueGroups.length === 0) continue;
+      const names = [
+        ...due.map((i) => i.name),
+        ...dueGroups.map((g) => `${g.name} (all ${g.items.filter((i) => i.trackLow).length} low)`),
+      ];
       const attempted = await push.sendToUsers(h.members.map((m) => m.userSub), {
-        title: h.name, body: digestBody(due.map((i) => i.name)), url: `/h/${h.id}/shopping`,
+        title: h.name, body: digestBody(names), url: `/h/${h.id}/shopping`,
       });
       if (attempted === 0) continue; // nobody subscribed yet — notify as soon as someone is
-      await prisma.inventory.updateMany({ where: { itemId: { in: due.map((i) => i.id) } }, data: { lastNotifiedAt: now } });
-      sentHouseholds++; sentItems += due.length;
+      if (due.length) await prisma.inventory.updateMany({ where: { itemId: { in: due.map((i) => i.id) } }, data: { lastNotifiedAt: now } });
+      if (dueGroups.length) await prisma.itemGroup.updateMany({ where: { id: { in: dueGroups.map((g) => g.id) } }, data: { lastNotifiedAt: now } });
+      sentHouseholds++; sentItems += due.length + dueGroups.length;
     } catch (err) {
       failed++;
       log?.(err, `low-stock digest failed for household ${h.id}`);

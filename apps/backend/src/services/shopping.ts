@@ -3,17 +3,33 @@ import type { Deps } from '../deps.js';
 import { num, numOrNull } from '../lib/num.js';
 import { lowItemsWhere } from '../scoped/inventory.js';
 import { toUnitDto } from '../scoped/units.js';
+import { groupItemInclude, groupTotals, type GroupFull } from './groups.js';
 import { applyEvent } from './inventory.js';
 import { imageUrls, itemInclude, loadItem, type ItemFull } from './items.js';
 
+/** The member purchased when the group's line is tapped: most recently restocked, then first by name. */
+function suggestedMember(g: GroupFull): { itemId: string; quantity: number } | null {
+  const active = g.items.filter((i) => i.trackLow);
+  if (active.length === 0) return null;
+  const byRestock = [...active].sort((a, b) => {
+    const ta = a.inventory!.lastRestockedAt?.getTime() ?? -1;
+    const tb = b.inventory!.lastRestockedAt?.getTime() ?? -1;
+    if (tb !== ta) return tb - ta;
+    return a.name.localeCompare(b.name);
+  });
+  const chosen = byRestock[0]!;
+  return { itemId: chosen.id, quantity: num(chosen.defaultRestockQty) };
+}
+
 export async function buildShoppingList(deps: Deps, hid: string): Promise<ShoppingListDto> {
   const { prisma } = deps;
-  const [lowItems, rows] = await Promise.all([
+  const [lowItems, rows, itemGroups] = await Promise.all([
     prisma.item.findMany({ where: lowItemsWhere(prisma, hid), include: itemInclude }),
     prisma.shoppingListItem.findMany({
       where: { householdId: hid, OR: [{ itemId: null }, { checkedOff: false }] },
       include: { store: true, item: { include: itemInclude } },
     }),
+    prisma.itemGroup.findMany({ where: { householdId: hid }, include: { ...groupItemInclude, preferredStore: true } }),
   ]);
 
   type Bucket = { store: ShoppingGroup['store']; entries: ShoppingEntry[] };
@@ -51,11 +67,22 @@ export async function buildShoppingList(deps: Deps, hid: string): Promise<Shoppi
       kind: 'text', rowId: row.id, name: row.name, quantity: numOrNull(row.quantity), checkedOff: row.checkedOff,
     });
   }
+  for (const g of itemGroups) {
+    const { total, low } = groupTotals(g);
+    if (!low) continue;
+    const suggested = suggestedMember(g);
+    if (!suggested) continue; // defensive: groupTotals already requires >=1 tracked member for `low`
+    bucketFor(g.preferredStore).entries.push({
+      kind: 'group', groupId: g.id, name: g.name,
+      members: g.items.map((i) => ({ itemId: i.id, name: i.name, currentCount: num(i.inventory!.currentCount), unit: toUnitDto(i.unit) })),
+      total, minStock: num(g.minStock), suggested,
+    });
+  }
 
-  const groups = [...buckets.values()];
-  for (const g of groups) g.entries.sort((a, b) => a.name.localeCompare(b.name));
-  groups.sort((a, b) => (a.store === null ? 1 : b.store === null ? -1 : a.store.name.localeCompare(b.store.name)));
-  return { groups };
+  const result = [...buckets.values()];
+  for (const g of result) g.entries.sort((a, b) => a.name.localeCompare(b.name));
+  result.sort((a, b) => (a.store === null ? 1 : b.store === null ? -1 : a.store.name.localeCompare(b.store.name)));
+  return { groups: result };
 }
 
 /** Tap-to-restock. Quantity precedence: explicit > manual row quantity > item default. Returns the event id (for undo). */

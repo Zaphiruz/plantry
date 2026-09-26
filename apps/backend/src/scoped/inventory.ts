@@ -10,11 +10,13 @@ import { itemInclude, loadItem, serializeItem } from '../services/items.js';
 
 const PAGE = 50;
 
+/** Grouped items are excluded: the GROUP is the unit that nags for them, not the item itself. */
 export function lowItemsWhere(prisma: PrismaClient, hid: string): Prisma.ItemWhereInput {
   return {
     householdId: hid,
     archivedAt: null,
     trackLow: true,
+    groupId: null,
     inventory: { is: { currentCount: { lte: prisma.inventory.fields.minStock } } },
   };
 }

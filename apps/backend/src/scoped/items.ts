@@ -53,7 +53,7 @@ export async function syncBarcodes(tx: Tx, hid: string, itemId: string, codes: s
 export function registerItemRoutes(s: FastifyInstance, deps: Deps): void {
   const { prisma } = deps;
 
-  async function assertRefs(hid: string, unitId?: string, storeId?: string | null): Promise<void> {
+  async function assertRefs(hid: string, unitId?: string, storeId?: string | null, groupId?: string | null): Promise<void> {
     if (unitId) {
       const ok = await prisma.unit.findFirst({ where: { id: unitId, OR: [{ householdId: hid }, { householdId: null }] } });
       if (!ok) throw new AppError(400, 'validation_error', 'Unknown unit');
@@ -61,6 +61,10 @@ export function registerItemRoutes(s: FastifyInstance, deps: Deps): void {
     if (storeId) {
       const ok = await prisma.store.findFirst({ where: { id: storeId, householdId: hid } });
       if (!ok) throw new AppError(400, 'validation_error', 'Unknown store');
+    }
+    if (groupId) {
+      const ok = await prisma.itemGroup.findFirst({ where: { id: groupId, householdId: hid } });
+      if (!ok) throw new AppError(400, 'validation_error', 'Unknown group');
     }
   }
 
@@ -82,7 +86,7 @@ export function registerItemRoutes(s: FastifyInstance, deps: Deps): void {
   s.post('/items', async (req) => {
     const hid = req.household!.id;
     const b = parse(itemCreateSchema, req.body);
-    await assertRefs(hid, b.unitId, b.preferredStoreId);
+    await assertRefs(hid, b.unitId, b.preferredStoreId, b.groupId);
     try {
       const id = await prisma.$transaction(async (tx) => {
         const clash = await findClashingCode(tx, hid, b.barcodes);
@@ -90,7 +94,7 @@ export function registerItemRoutes(s: FastifyInstance, deps: Deps): void {
         const item = await tx.item.create({
           data: {
             householdId: hid, name: b.name, description: b.description ?? null, category: b.category ?? null,
-            unitId: b.unitId, preferredStoreId: b.preferredStoreId ?? null,
+            unitId: b.unitId, preferredStoreId: b.preferredStoreId ?? null, groupId: b.groupId ?? null,
             renotifyAfterDays: b.renotifyAfterDays, defaultRestockQty: b.defaultRestockQty,
             autoDeductQty: b.autoDeductQty ?? null, autoDeductPeriodDays: b.autoDeductPeriodDays,
             autoDeductPaused: b.autoDeductPaused, trackLow: b.trackLow,
@@ -122,7 +126,7 @@ export function registerItemRoutes(s: FastifyInstance, deps: Deps): void {
     const hid = req.household!.id;
     const existing = await loadItem(deps, hid, req.params.id);
     const b = parse(itemUpdateSchema, req.body);
-    await assertRefs(hid, b.unitId, b.preferredStoreId);
+    await assertRefs(hid, b.unitId, b.preferredStoreId, b.groupId);
 
     const { minStock, barcodes, ...itemFields } = b;
     const nextQty = b.autoDeductQty !== undefined ? b.autoDeductQty : existing.autoDeductQty === null ? null : Number(existing.autoDeductQty);

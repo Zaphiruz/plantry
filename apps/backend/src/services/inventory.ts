@@ -1,5 +1,6 @@
 import type { EventType, InventoryEvent, Prisma } from '@prisma/client';
 import { AppError } from '../errors.js';
+import { num } from '../lib/num.js';
 
 export type Db = Prisma.TransactionClient;
 
@@ -23,9 +24,22 @@ export interface ApplyEventInput {
 }
 
 async function clearNotifiedIfRecovered(db: Db, itemId: string): Promise<void> {
-  const inv = await db.inventory.findUniqueOrThrow({ where: { itemId } });
+  const inv = await db.inventory.findUniqueOrThrow({ where: { itemId }, include: { item: { select: { groupId: true } } } });
   if (inv.lastNotifiedAt && inv.currentCount.gt(inv.minStock)) {
     await db.inventory.update({ where: { itemId }, data: { lastNotifiedAt: null } });
+  }
+  if (inv.item.groupId) await clearGroupNotifiedIfRecovered(db, inv.item.groupId);
+}
+
+/** Mirrors clearNotifiedIfRecovered for the group's own cadence: cleared once the sum of its
+ * active, trackLow members' counts rises back above the group's minimum. */
+async function clearGroupNotifiedIfRecovered(db: Db, groupId: string): Promise<void> {
+  const group = await db.itemGroup.findUniqueOrThrow({ where: { id: groupId } });
+  if (!group.lastNotifiedAt) return;
+  const members = await db.item.findMany({ where: { groupId, archivedAt: null, trackLow: true }, include: { inventory: true } });
+  const total = members.reduce((sum, m) => sum + num(m.inventory!.currentCount), 0);
+  if (total > num(group.minStock)) {
+    await db.itemGroup.update({ where: { id: groupId }, data: { lastNotifiedAt: null } });
   }
 }
 

@@ -8,6 +8,7 @@ import { registerInviteCreateRoute } from '../households/invites.js';
 import { registerStoreRoutes } from './stores.js';
 import { registerUnitRoutes } from './units.js';
 import { registerItemRoutes } from './items.js';
+import { registerGroupRoutes } from './groups.js';
 import { registerInventoryRoutes } from './inventory.js';
 import { registerRateRoutes } from './rates.js';
 import { registerShoppingRoutes } from './shopping.js';
@@ -40,6 +41,7 @@ export async function registerScoped(app: FastifyInstance, deps: Deps): Promise<
     registerUnitRoutes(s, deps);
     registerRateRoutes(s, deps);
     registerItemRoutes(s, deps);
+    registerGroupRoutes(s, deps);
     registerInventoryRoutes(s, deps);
     registerShoppingRoutes(s, deps);
     registerPhotoRoutes(s, deps);

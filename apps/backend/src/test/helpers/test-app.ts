@@ -6,7 +6,8 @@ import { createSessionStore } from '../../auth/session.js';
 import { FakeGithub, FakeOidcClient, FakePush, FakeStorage } from './fakes.js';
 import { applyEvent } from '../../services/inventory.js';
 
-export interface ItemOpts { name?: string; count?: number; min?: number; storeId?: string; barcode?: string; barcodes?: string[]; archived?: boolean; defaultRestockQty?: number; unitId?: string; trackLow?: boolean }
+export interface ItemOpts { name?: string; count?: number; min?: number; storeId?: string; barcode?: string; barcodes?: string[]; archived?: boolean; defaultRestockQty?: number; unitId?: string; trackLow?: boolean; groupId?: string }
+export interface GroupOpts { name?: string; minStock?: number; storeId?: string; renotifyAfterDays?: number }
 
 export const TEST_ORIGIN = 'http://localhost:5173';
 export const TEST_COOKIE = 'plantry_sid';
@@ -25,6 +26,7 @@ export interface TestCtx {
   household(owner: TestUser, name?: string): Promise<string>;
   addMember(hid: string, user: TestUser, role?: 'owner' | 'member'): Promise<void>;
   item(hid: string, opts?: ItemOpts): Promise<import('@prisma/client').Item>;
+  group(hid: string, opts?: GroupOpts): Promise<import('@prisma/client').ItemGroup>;
   close(): Promise<void>;
 }
 
@@ -93,6 +95,7 @@ export async function createTestApp(opts: { storage?: boolean; push?: boolean; g
           preferredStoreId: opts.storeId ?? null,
           defaultRestockQty: opts.defaultRestockQty ?? 1,
           trackLow: opts.trackLow ?? true,
+          groupId: opts.groupId ?? null,
           archivedAt: opts.archived ? new Date() : null,
           inventory: { create: { minStock: opts.min ?? 0 } },
           barcodes: { create: codes.map((code) => ({ householdId: hid, code, archived: !!opts.archived })) },
@@ -104,6 +107,14 @@ export async function createTestApp(opts: { storage?: boolean; push?: boolean; g
         }));
       }
       return item;
+    },
+    async group(hid, opts = {}) {
+      return prisma.itemGroup.create({
+        data: {
+          householdId: hid, name: opts.name ?? `Group ${++n}`, minStock: opts.minStock ?? 0,
+          preferredStoreId: opts.storeId ?? null, renotifyAfterDays: opts.renotifyAfterDays ?? 7,
+        },
+      });
     },
     async close() { await app.close(); },
   };

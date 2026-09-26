@@ -20,6 +20,8 @@ const BODIES: Record<string, unknown> = {
   'POST /items': { name: 'x', unitId: 'EACH' },
   'PATCH /items/:id': { name: 'x' },
   'POST /items/:targetId/consolidate': { sourceId: 'A_ITEM' },
+  'POST /groups': { name: 'x' },
+  'PATCH /groups/:id': { name: 'x' },
   'POST /inventory/:itemId/restock': { quantity: 1 },
   'POST /inventory/:itemId/consume': { quantity: 1 },
   'POST /inventory/:itemId/adjust': { newCount: 1 },
@@ -47,6 +49,7 @@ describe('scoping matrix', () => {
     const bUnit = await ctx.prisma.unit.create({ data: { householdId: B, name: 'u' } });
     const bRow = await ctx.prisma.shoppingListItem.create({ data: { householdId: B, name: 'r' } });
     const bEvent = await ctx.prisma.inventoryEvent.findFirstOrThrow({ where: { itemId: bItem.id } });
+    const bGroup = await ctx.group(B);
 
     const foreignId = (suffix: string, param: string): string => {
       if (param === 'sub') return bMember.sub;
@@ -55,6 +58,7 @@ describe('scoping matrix', () => {
       if (suffix.startsWith('/stores')) return bStore.id;
       if (suffix.startsWith('/units')) return bUnit.id;
       if (suffix.startsWith('/shopping-list-items')) return bRow.id;
+      if (suffix.startsWith('/groups')) return bGroup.id;
       return bItem.id; // /items/:id...
     };
 
