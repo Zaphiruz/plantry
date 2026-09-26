@@ -29,8 +29,19 @@ describe('groups', () => {
     await ctx.item(hid, { name: 'Chicken', count: 1, groupId: group.id });
     await ctx.item(hid, { name: 'Beef (untracked)', count: 99, groupId: group.id, trackLow: false });
     const g = (await ctx.call(u, 'GET', `${base}/groups`)).body.data[0];
-    expect(g).toMatchObject({ total: 2, low: true, memberIds: expect.arrayContaining([]) });
+    expect(g).toMatchObject({ total: 2, low: true });
     expect(g.memberIds).toHaveLength(3);
+  });
+
+  it('adjusting a member\'s count so the group recovers clears the group\'s last_notified_at', async () => {
+    const u = await ctx.user(); const hid = await ctx.household(u); const base = `/api/households/${hid}`;
+    const group = (await ctx.call(u, 'POST', `${base}/groups`, { name: 'Cat treats', minStock: 2 })).body.data;
+    const a = await ctx.item(hid, { name: 'Salmon', count: 1, groupId: group.id });
+    await ctx.prisma.itemGroup.update({ where: { id: group.id }, data: { lastNotifiedAt: new Date() } });
+
+    const r = await ctx.call(u, 'POST', `${base}/inventory/${a.id}/adjust`, { newCount: 5 });
+    expect(r.status).toBe(200);
+    expect((await ctx.prisma.itemGroup.findUniqueOrThrow({ where: { id: group.id } })).lastNotifiedAt).toBeNull();
   });
 
   it('is not low when one member alone covers the minimum', async () => {
