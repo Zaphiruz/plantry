@@ -56,6 +56,26 @@ describe('inventory routes', () => {
     expect((await ctx.call(u, 'GET', `${base}/inventory`)).body.data).toHaveLength(3);
   });
 
+  it('an untracked low item is absent from /inventory/low and its nagging badge, but low/currentCount still show; PATCH re-enabling it makes it reappear', async () => {
+    const u = await ctx.user(); const hid = await ctx.household(u); const base = `/api/households/${hid}`;
+    const untracked = await ctx.item(hid, { name: 'quiet', count: 0, min: 5, trackLow: false });
+    await ctx.item(hid, { name: 'loud', count: 0, min: 5 });
+
+    const low = (await ctx.call(u, 'GET', `${base}/inventory/low`)).body.data.map((i: any) => i.name);
+    expect(low).toEqual(['loud']);
+
+    const all = (await ctx.call(u, 'GET', `${base}/inventory`)).body.data;
+    const quiet = all.find((i: any) => i.name === 'quiet');
+    expect(quiet).toMatchObject({ low: true, trackLow: false, nagging: false });
+    const loud = all.find((i: any) => i.name === 'loud');
+    expect(loud).toMatchObject({ low: true, trackLow: true, nagging: true });
+
+    const patched = await ctx.call(u, 'PATCH', `/api/households/${hid}/items/${untracked.id}`, { trackLow: true });
+    expect(patched.body.data.nagging).toBe(true);
+    const lowAfter = (await ctx.call(u, 'GET', `${base}/inventory/low`)).body.data.map((i: any) => i.name);
+    expect(lowAfter.sort()).toEqual(['loud', 'quiet']);
+  });
+
   it('event history is newest-first with user names and paginates', async () => {
     const u = await ctx.user({ name: 'Ada' }); const hid = await ctx.household(u); const base = `/api/households/${hid}`;
     const item = await ctx.item(hid);

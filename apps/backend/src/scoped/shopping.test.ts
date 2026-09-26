@@ -33,6 +33,18 @@ describe('shopping list', () => {
     expect(groups[2].entries[0]).toMatchObject({ name: 'No store low', low: true, manual: false, rowId: null });
   });
 
+  it('an untracked low item is absent from the derived list, but shows raw low:true when added manually', async () => {
+    const u = await ctx.user(); const hid = await ctx.household(u); const base = `/api/households/${hid}`;
+    const quiet = await ctx.item(hid, { name: 'Quiet', count: 0, min: 1, trackLow: false });
+
+    const before = (await ctx.call(u, 'GET', `${base}/shopping-list`)).body.data.groups;
+    expect(before).toEqual([]);
+
+    expect((await ctx.call(u, 'POST', `${base}/shopping-list-items`, { itemId: quiet.id })).status).toBe(200);
+    const groups = (await ctx.call(u, 'GET', `${base}/shopping-list`)).body.data.groups;
+    expect(groups[0].entries[0]).toMatchObject({ name: 'Quiet', low: true, manual: true });
+  });
+
   it('purchase restocks default qty, stamps last_checked_off_at, removes the manual row, and is undoable', async () => {
     const u = await ctx.user(); const hid = await ctx.household(u); const base = `/api/households/${hid}`;
     const item = await ctx.item(hid, { count: 1, min: 2, defaultRestockQty: 12 });

@@ -25,19 +25,20 @@ export async function buildShoppingList(deps: Deps, hid: string): Promise<Shoppi
     return b;
   };
 
-  const byItem = new Map<string, { item: ItemFull; low: boolean; rowId: string | null; rowQty: number | null }>();
-  for (const item of lowItems) byItem.set(item.id, { item, low: true, rowId: null, rowQty: null });
+  const byItem = new Map<string, { item: ItemFull; rowId: string | null; rowQty: number | null }>();
+  for (const item of lowItems) byItem.set(item.id, { item, rowId: null, rowQty: null });
   for (const row of rows) {
     if (!row.item) continue;
     if (row.item.archivedAt) continue;
-    const existing = byItem.get(row.item.id);
-    byItem.set(row.item.id, {
-      item: row.item, low: existing?.low ?? false, rowId: row.id, rowQty: numOrNull(row.quantity),
-    });
+    byItem.set(row.item.id, { item: row.item, rowId: row.id, rowQty: numOrNull(row.quantity) });
   }
 
-  for (const { item, low, rowId, rowQty } of byItem.values()) {
+  // `low` is always the raw currentCount <= minStock — including for a manually-added row on an
+  // item with tracking off (it's on the list because the user put it there, not because it's
+  // nagging, but its own low/ok state is still worth showing).
+  for (const { item, rowId, rowQty } of byItem.values()) {
     const { thumbUrl } = await imageUrls(item.imageRef, deps.storage);
+    const low = num(item.inventory!.currentCount) <= num(item.inventory!.minStock);
     bucketFor(item.preferredStore).entries.push({
       kind: 'item', itemId: item.id, name: item.name, unit: toUnitDto(item.unit),
       quantity: rowQty ?? num(item.defaultRestockQty), low, manual: rowId !== null, rowId,

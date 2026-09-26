@@ -15,7 +15,7 @@ export interface ItemDto {
   renotifyAfterDays: number; defaultRestockQty: number;
   autoDeductQty: number | null; autoDeductPeriodDays: number; autoDeductPaused: boolean;
   archivedAt: string | null;
-  currentCount: number; minStock: number; low: boolean;
+  currentCount: number; minStock: number; low: boolean; trackLow: boolean; nagging: boolean;
   lastRestockedAt: string | null;
   nextTripRowId: string | null;
   imageUrl: string | null; thumbUrl: string | null; imageUrlsExpireAt: string | null;

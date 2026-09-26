@@ -46,6 +46,7 @@ const itemFields = {
   autoDeductPeriodDays: z.number().int().min(1).max(3650),
   autoDeductPaused: z.boolean(),
   minStock: nonNegSchema,
+  trackLow: z.boolean(),
 };
 export const itemCreateSchema = z.object({
   ...itemFields,
@@ -55,6 +56,7 @@ export const itemCreateSchema = z.object({
   autoDeductPeriodDays: itemFields.autoDeductPeriodDays.default(1),
   autoDeductPaused: itemFields.autoDeductPaused.default(false),
   minStock: itemFields.minStock.default(0),
+  trackLow: itemFields.trackLow.default(true),
   currentCount: countSchema.default(0),
 }).strict();
 export const itemUpdateSchema = z.object(itemFields).partial().strict();

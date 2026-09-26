@@ -90,6 +90,20 @@ describe('items', () => {
   it('update with {} applies no defaults (barcodes stays absent)', () => {
     expect(itemUpdateSchema.parse({})).toEqual({});
   });
+  it('trackLow defaults to true on create', () => {
+    const v = itemCreateSchema.parse({ name: 'Cat food', unitId });
+    expect(v.trackLow).toBe(true);
+  });
+  it('trackLow can be set to false on create', () => {
+    const v = itemCreateSchema.parse({ name: 'Cat food', unitId, trackLow: false });
+    expect(v.trackLow).toBe(false);
+  });
+  it('update applies no default for trackLow (stays absent)', () => {
+    expect(itemUpdateSchema.parse({})).toEqual({});
+  });
+  it('update accepts an explicit trackLow', () => {
+    expect(itemUpdateSchema.parse({ trackLow: false }).trackLow).toBe(false);
+  });
   it('update accepts an explicit barcodes list', () => {
     expect(itemUpdateSchema.parse({ barcodes: ['1', '2'] }).barcodes).toEqual(['1', '2']);
   });

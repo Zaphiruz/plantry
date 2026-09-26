@@ -39,6 +39,17 @@ describe('low-stock digest', () => {
     expect(await notified(b.id)).not.toBeNull();
   });
 
+  it('excludes items with tracking off from the digest count and re-remind window', async () => {
+    const o = await ctx.user(); const hid = await ctx.household(o, 'Casa');
+    const quiet = await ctx.item(hid, { name: 'Quiet', count: 0, min: 1, trackLow: false });
+    const loud = await ctx.item(hid, { name: 'Loud', count: 0, min: 1 });
+    const r = await runLowStockDigest(ctx.prisma, ctx.push, NOW);
+    expect(r).toEqual({ households: 1, items: 1, failed: 0 });
+    expect(ctx.push.sent[0]!.payload.body).toBe('1 item low — Loud');
+    expect(await notified(quiet.id)).toBeNull();
+    expect(await notified(loud.id)).not.toBeNull();
+  });
+
   it('honours per-item renotify_after_days', async () => {
     const o = await ctx.user(); const hid = await ctx.household(o);
     const daily = await ctx.item(hid, { name: 'Daily', count: 0, min: 1 });

@@ -138,6 +138,7 @@ model Item {
   autoDeductQty        Decimal?  @map("auto_deduct_qty") @db.Decimal(12, 3)
   autoDeductPeriodDays Int       @default(1) @map("auto_deduct_period_days")
   autoDeductPaused     Boolean   @default(false) @map("auto_deduct_paused")
+  trackLow             Boolean   @default(true) @map("track_low")
   archivedAt           DateTime? @map("archived_at") @db.Timestamptz(6)
   archivedBy           String?   @map("archived_by")
   createdAt            DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)

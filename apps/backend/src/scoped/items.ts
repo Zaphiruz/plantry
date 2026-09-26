@@ -93,7 +93,7 @@ export function registerItemRoutes(s: FastifyInstance, deps: Deps): void {
             unitId: b.unitId, preferredStoreId: b.preferredStoreId ?? null,
             renotifyAfterDays: b.renotifyAfterDays, defaultRestockQty: b.defaultRestockQty,
             autoDeductQty: b.autoDeductQty ?? null, autoDeductPeriodDays: b.autoDeductPeriodDays,
-            autoDeductPaused: b.autoDeductPaused,
+            autoDeductPaused: b.autoDeductPaused, trackLow: b.trackLow,
             inventory: { create: { minStock: b.minStock, lastAutoDeductAt: b.autoDeductQty ? new Date() : null } },
             barcodes: { create: b.barcodes.map((code) => ({ householdId: hid, code, archived: false })) },
           },

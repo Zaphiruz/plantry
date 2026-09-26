@@ -14,6 +14,7 @@ export function lowItemsWhere(prisma: PrismaClient, hid: string): Prisma.ItemWhe
   return {
     householdId: hid,
     archivedAt: null,
+    trackLow: true,
     inventory: { is: { currentCount: { lte: prisma.inventory.fields.minStock } } },
   };
 }
