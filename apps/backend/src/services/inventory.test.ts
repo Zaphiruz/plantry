@@ -71,4 +71,20 @@ describe('undoEvent', () => {
     expect(await count(item.id)).toBe(5);
     expect(await sumOfEvents(item.id)).toBe(5);
   });
+
+  it('undoing an adjust on a grouped item clears the GROUP\'s last_notified_at once the reversed total recovers', async () => {
+    const u = await ctx.user(); const hid = await ctx.household(u);
+    const group = await ctx.group(hid, { name: 'Treats', minStock: 2 });
+    const a = await ctx.item(hid, { count: 5, groupId: group.id }); // total 5 > min 2 → not low yet
+
+    const ev = await ctx.prisma.$transaction((tx) =>
+      applyEvent(tx, { itemId: a.id, householdId: hid, eventType: 'adjust', quantity: -4, userSub: u.sub }));
+    // total now 1 <= min 2 → low; simulate this having already been notified
+    await ctx.prisma.itemGroup.update({ where: { id: group.id }, data: { lastNotifiedAt: new Date() } });
+
+    await ctx.prisma.$transaction((tx) => undoEvent(tx, ev));
+    // reversing the adjust restores the total to 5 > min 2 → recovered → group clear helper fires
+    expect(await count(a.id)).toBe(5);
+    expect((await ctx.prisma.itemGroup.findUniqueOrThrow({ where: { id: group.id } })).lastNotifiedAt).toBeNull();
+  });
 });

@@ -67,6 +67,24 @@ describe('consolidate', () => {
     expect(await ctx.prisma.inventoryEvent.count({ where: { itemId: a.id } })).toBe(1);
   });
 
+  it('consolidating into a grouped target clears the GROUP\'s last_notified_at once the total recovers', async () => {
+    const u = await ctx.user(); const hid = await ctx.household(u); const base = `/api/households/${hid}`;
+    const group = await ctx.group(hid, { name: 'Treats', minStock: 3 });
+    const target = await ctx.item(hid, { name: 'Beef', count: 1, groupId: group.id });
+    const source = await ctx.item(hid, { name: 'Beef (dup)', count: 1 });
+    await ctx.item(hid, { name: 'Chicken', count: 0, groupId: group.id }); // total 1 <= min 3 → low
+    await ctx.prisma.itemGroup.update({ where: { id: group.id }, data: { lastNotifiedAt: new Date() } });
+
+    const r = await ctx.call(u, 'POST', `${base}/items/${target.id}/consolidate`, { sourceId: source.id, keepMinStockFrom: 'target' });
+    expect(r.status).toBe(200); // target now has 2, group total 2 + 0 = 2 <= 3 → still low → keep
+    expect((await ctx.prisma.itemGroup.findUniqueOrThrow({ where: { id: group.id } })).lastNotifiedAt).not.toBeNull();
+
+    const source2 = await ctx.item(hid, { name: 'Beef (dup2)', count: 5 });
+    await ctx.call(u, 'POST', `${base}/items/${target.id}/consolidate`, { sourceId: source2.id, keepMinStockFrom: 'target' });
+    // target now 2 + 5 = 7, group total 7 + 0 = 7 > 3 → clear
+    expect((await ctx.prisma.itemGroup.findUniqueOrThrow({ where: { id: group.id } })).lastNotifiedAt).toBeNull();
+  });
+
   it('is atomic: a failure at the last step leaves everything untouched', async () => {
     const u = await ctx.user(); const hid = await ctx.household(u);
     const target = await ctx.item(hid, { count: 2 }); const source = await ctx.item(hid, { count: 3, barcode: '777' });

@@ -32,8 +32,10 @@ async function clearNotifiedIfRecovered(db: Db, itemId: string): Promise<void> {
 }
 
 /** Mirrors clearNotifiedIfRecovered for the group's own cadence: cleared once the sum of its
- * active, trackLow members' counts rises back above the group's minimum. */
-async function clearGroupNotifiedIfRecovered(db: Db, groupId: string): Promise<void> {
+ * active, trackLow members' counts rises back above the group's minimum. Exported so callers
+ * that mutate a grouped item's count outside `applyEvent` (consolidate, undoEvent) can keep the
+ * group's cadence in sync too. */
+export async function clearGroupNotifiedIfRecovered(db: Db, groupId: string): Promise<void> {
   const group = await db.itemGroup.findUniqueOrThrow({ where: { id: groupId } });
   if (!group.lastNotifiedAt) return;
   const members = await db.item.findMany({ where: { groupId, archivedAt: null, trackLow: true }, include: { inventory: true } });
@@ -72,4 +74,6 @@ export async function undoEvent(db: Db, event: InventoryEvent): Promise<void> {
     where: { itemId: event.itemId },
     data: { currentCount: { decrement: signedDelta(event.eventType, Number(event.quantity)) } },
   });
+  const item = await db.item.findUniqueOrThrow({ where: { id: event.itemId }, select: { groupId: true } });
+  if (item.groupId) await clearGroupNotifiedIfRecovered(db, item.groupId);
 }

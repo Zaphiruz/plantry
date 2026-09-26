@@ -5,6 +5,7 @@ import { AppError, notFound } from '../errors.js';
 import { uuidParam } from '../lib/ids.js';
 import { num, numOrNull } from '../lib/num.js';
 import { toUnitDto } from '../scoped/units.js';
+import { clearGroupNotifiedIfRecovered } from './inventory.js';
 import { GET_TTL_SECONDS, thumbKeyOf, type Storage } from './storage.js';
 
 export const itemInclude = {
@@ -100,6 +101,7 @@ export async function consolidate(prisma: PrismaClient, rawArgs: ConsolidateArgs
     if (tInv.lastNotifiedAt && tInv.currentCount.gt(tInv.minStock)) {
       await tx.inventory.update({ where: { itemId: target.id }, data: { lastNotifiedAt: null } });
     }
+    if (target.groupId) await clearGroupNotifiedIfRecovered(tx, target.groupId);
     await tx.inventory.update({ where: { itemId: source.id }, data: { currentCount: 0 } });
 
     const targetHasRow = await tx.shoppingListItem.findFirst({ where: { itemId: target.id, checkedOff: false } });
