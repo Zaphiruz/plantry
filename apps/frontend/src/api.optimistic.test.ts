@@ -3,7 +3,7 @@ import type { ItemDto } from '@plantry/shared';
 import { api } from './api';
 import { makeStore } from './store';
 
-const item = { id: 'i1', name: 'Rice', currentCount: 3, minStock: 2, low: false } as ItemDto;
+const item = { id: 'i1', name: 'Rice', currentCount: 3, minStock: 2, low: false, trackLow: true, nagging: false, groupId: null } as ItemDto;
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 afterEach(() => vi.unstubAllGlobals());
@@ -23,11 +23,13 @@ describe('optimistic stepper', () => {
     const pending = store.dispatch(api.endpoints.consume.initiate({ hid: 'h1', itemId: 'i1', quantity: 1 }));
     await vi.waitFor(() => expect(read().currentCount).toBe(2));
     expect(read().low).toBe(true);
+    expect(read().nagging).toBe(true);
 
     failConsume();
     await pending;
     expect(read().currentCount).toBe(3);
     expect(read().low).toBe(false);
+    expect(read().nagging).toBe(false);
   });
 
   it('two rapid taps that both fail end at the original count', async () => {

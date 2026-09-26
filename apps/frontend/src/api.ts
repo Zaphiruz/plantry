@@ -125,6 +125,8 @@ async function optimisticCount(
     if (!item) return;
     item.currentCount = Math.round((item.currentCount + d) * 1000) / 1000;
     item.low = item.currentCount <= item.minStock;
+    // Mirrors serializeItem: a grouped item never nags on its own — the group nags for it.
+    item.nagging = item.low && item.trackLow && !item.groupId;
   }));
   apply(delta);
   try { await queryFulfilled; } catch { apply(-delta); }
