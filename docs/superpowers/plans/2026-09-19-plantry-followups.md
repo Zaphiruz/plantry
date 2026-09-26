@@ -24,9 +24,9 @@ Live at https://plantry.wispy-nook.casa. Private repo `Zaphiruz/plantry`; CI on 
 | `deploy.yml` | Manual dispatch and the automatic `workflow_run` path both exercised; deploys the CI-validated SHA; `/api/ready` health check green |
 | Secrets | Loaded by `scripts/provision-secrets.sh` (nothing displayed or stored locally); deploy key also in Vault at `deploy-keys/plantry` |
 
-Observed, not fixed: Cloudflare's zone-wide Browser Cache TTL (4 h) rewrites `sw.js`'s `no-cache` — set it to "Respect Existing Headers" (affects every PWA on the zone). Owner still to run on S2: `shred -u /root/.plantry-db-pw /root/.plantry-s3.json /root/.plantry-vault-token`.
+Observed, not fixed: Cloudflare's zone-wide Browser Cache TTL (4 h) rewrites `sw.js`'s `no-cache` — set it to "Respect Existing Headers" (affects every PWA on the zone). Staging secret files in /root on S2 confirmed shredded (2026-09-26).
 
-In progress: per-unit step setting (issue #1, "0.003 cans") on branch `feat/unit-step`.
+Shipped since: per-unit step (#1), multiple barcodes per item (#3), per-item low-stock reminders toggle (#7), continuous Use/Restock scan mode (#6, #8), item groups with a shared minimum (#4).
 
 ## Deferred, by judgement (none blocks merge or first deploy)
 
