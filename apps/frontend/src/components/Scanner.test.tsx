@@ -169,6 +169,35 @@ describe('Scanner continuous mode', () => {
     await waitFor(() => expect(stop).toHaveBeenCalledTimes(1));
   });
 
+  it('uses a sliding debounce window: a code held continuously fires once, and refires only after going unseen for the window', async () => {
+    vi.useFakeTimers();
+    try {
+      const onDetected = vi.fn(async () => {});
+      vi.stubGlobal('navigator', { ...navigator, mediaDevices: { getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop: vi.fn() }] })) } });
+      let present = true;
+      vi.stubGlobal('BarcodeDetector', class { detect = vi.fn(async () => (present ? [{ rawValue: 'A1' }] : [])); });
+      vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+
+      render(<Scanner open continuous onDetected={onDetected} onClose={() => {}} />);
+
+      // The same code sits in frame, detected roughly every 100ms, for 6s straight — well past
+      // the 2.5s debounce window. A fixed "since last ACCEPTED hit" window would refire here;
+      // the sliding window must not, because every sighting keeps refreshing the code's clock.
+      for (let i = 0; i < 60; i++) await vi.advanceTimersByTimeAsync(100);
+      expect(onDetected).toHaveBeenCalledTimes(1);
+
+      // Code leaves the frame for 2.5s (no sightings at all, so its clock is never refreshed)...
+      present = false;
+      await vi.advanceTimersByTimeAsync(2500);
+      // ...then reappears: this must count as a fresh hit.
+      present = true;
+      await vi.advanceTimersByTimeAsync(200);
+      expect(onDetected).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('renders the status line when provided', async () => {
     vi.stubGlobal('navigator', { ...navigator, mediaDevices: { getUserMedia: vi.fn(async () => ({ getTracks: () => [{ stop: vi.fn() }] })) } });
     vi.stubGlobal('BarcodeDetector', class { detect = vi.fn(async () => []); });

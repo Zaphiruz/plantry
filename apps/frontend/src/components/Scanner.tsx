@@ -53,19 +53,28 @@ export function Scanner({ open, continuous, status, onDetected, onClose }: {
       teardown(); // release the camera immediately, before the caller re-renders
       onDetected(code);
     };
-    // Continuous mode never tears the camera down on a hit: it debounces the same code for
-    // DEBOUNCE_MS, ignores any detection while the previous onDetected call is still pending,
-    // and otherwise keeps detecting immediately after firing.
+    // Continuous mode never tears the camera down on a hit: it debounces the same code with a
+    // SLIDING window — every sighting of a still-present code (even one suppressed here, or one
+    // arriving while the previous onDetected call is still pending) refreshes its clock, so a
+    // barcode left in frame keeps refiring the debounce rather than expiring under it. Only once
+    // the code has gone unseen for DEBOUNCE_MS does the next sighting count as a fresh hit.
     const hit = (code: string) => {
       if (stopped) return;
       if (!continuous) { done(code); return; }
-      if (busyRef.current) return;
       const now = Date.now();
       const last = lastCodeRef.current;
-      if (last && last.code === code && now - last.time < DEBOUNCE_MS) return;
+      if (last && last.code === code) {
+        const stillPresent = now - last.time < DEBOUNCE_MS;
+        last.time = now; // refresh on every sighting, including a suppressed or busy one
+        if (stillPresent || busyRef.current) return;
+      } else if (busyRef.current) {
+        return; // a different code arriving mid-flight doesn't reset the tracked code's clock
+      }
       lastCodeRef.current = { code, time: now };
       busyRef.current = true;
-      void Promise.resolve(onDetected(code)).finally(() => { busyRef.current = false; });
+      // Wrapped so a synchronous throw from onDetected (not just a rejected promise) still
+      // clears busyRef via .finally instead of leaving the scanner permanently "busy".
+      void Promise.resolve().then(() => onDetected(code)).finally(() => { busyRef.current = false; });
     };
 
     (async () => {
